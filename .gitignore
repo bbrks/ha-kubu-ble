@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# never commit captures or logs: they can contain keys
+*.log
+*.zip
+logcat*.txt
+dist/
