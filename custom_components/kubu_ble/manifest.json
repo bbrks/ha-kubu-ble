@@ -1,0 +1,27 @@
+{
+  "domain": "kubu_ble",
+  "name": "Kubu BLE",
+  "bluetooth": [
+    {
+      "manufacturer_id": 3535,
+      "connectable": false
+    },
+    {
+      "local_name": "KubuRetroPro-*",
+      "connectable": false
+    }
+  ],
+  "codeowners": [
+    "@bbrks"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
+  "documentation": "https://github.com/bbrks/ha-kubu-ble",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/bbrks/ha-kubu-ble/issues",
+  "requirements": [],
+  "version": "0.0.1"
+}

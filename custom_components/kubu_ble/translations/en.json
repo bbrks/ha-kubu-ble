@@ -1,0 +1,21 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "description": "Choose a Kubu sensor found nearby.",
+        "data": {
+          "address": "Device"
+        }
+      },
+      "confirm": {
+        "description": "Set up {name}?"
+      }
+    },
+    "abort": {
+      "already_configured": "This device is already set up.",
+      "no_devices_found": "No Kubu sensors found nearby. Make sure Bluetooth is set up and active scanning is on.",
+      "not_supported": "This device is not supported."
+    }
+  }
+}
