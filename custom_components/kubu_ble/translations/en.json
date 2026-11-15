@@ -8,9 +8,21 @@
           "address": "Device"
         }
       },
-      "confirm": {
-        "description": "Set up {name}?"
+      "login": {
+        "title": "Sign in to Kubu",
+        "description": "Sign in with the email and password you use in the Kubu app. Home Assistant uses this once to get the key for {name}. Your email and password are not saved, and after setup the sensor is read locally over Bluetooth.\n\nThe sensor must already be set up in the Kubu app.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
       }
+    },
+    "error": {
+      "invalid_auth": "Wrong email or password. Accounts that sign in with Google are not supported.",
+      "cannot_connect": "Could not reach the Kubu cloud. Try again later.",
+      "not_in_account": "This sensor is not in your Kubu account. Set it up in the Kubu app first.",
+      "too_many_attempts": "Too many failed sign-ins. Kubu has locked sign-in for 5 minutes; wait and try again.",
+      "email_not_verified": "Your email is not verified yet. Verify it from the Kubu app, then try again."
     },
     "abort": {
       "already_configured": "This device is already set up.",

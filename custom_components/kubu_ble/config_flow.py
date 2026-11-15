@@ -1,7 +1,12 @@
-"""Config flow for Kubu BLE."""
+"""Config flow for Kubu BLE.
+
+Setup signs in to the user's Kubu account once to fetch the sensor's key.
+Only the key is stored; the email and password are not.
+"""
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -10,10 +15,26 @@ from homeassistant.components.bluetooth import (
     async_discovered_service_info,
 )
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_ADDRESS
+from homeassistant.const import CONF_ADDRESS, CONF_EMAIL, CONF_PASSWORD
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import DOMAIN
+from .cloud import (
+    ERROR_EMAIL_NOT_VERIFIED,
+    ERROR_TOO_MANY_TRIES,
+    KubuAuthError,
+    KubuCloud,
+    KubuCloudError,
+    KubuCloudNode,
+    normalize_mac,
+)
+from .const import CONF_DP_KEY, CONF_SENSOR_TYPE, CONF_SERIAL, DOMAIN
 from .device import is_kubu_device
+
+_LOGGER = logging.getLogger(__name__)
+
+LOGIN_SCHEMA = vol.Schema(
+    {vol.Required(CONF_EMAIL): str, vol.Required(CONF_PASSWORD): str}
+)
 
 
 def _title(info: BluetoothServiceInfoBleak) -> str:
@@ -31,6 +52,8 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         self._name: str | None = None
         self._discovered: dict[str, BluetoothServiceInfoBleak] = {}
 
+    # --- Finding the device -------------------------------------------------
+
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> ConfigFlowResult:
@@ -42,7 +65,7 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         self._address = discovery_info.address
         self._name = _title(discovery_info)
         self.context["title_placeholders"] = {"name": self._name}
-        return await self.async_step_confirm()
+        return await self.async_step_login()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -54,7 +77,7 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
             self._address = address
             self._name = _title(self._discovered[address])
-            return await self.async_step_confirm()
+            return await self.async_step_login()
 
         current = self._async_current_ids(include_ignore=False)
         for info in async_discovered_service_info(self.hass, connectable=False):
@@ -80,18 +103,65 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
         )
 
-    async def async_step_confirm(
+    # --- Kubu account -------------------------------------------------------
+
+    async def async_step_login(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Confirm setup of the sensor."""
+        """Sign in to the Kubu account and fetch this sensor's key."""
         assert self._address is not None
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            return self.async_create_entry(
-                title=self._name or self._address,
-                data={CONF_ADDRESS: self._address},
+            node, error = await self._async_fetch_node(
+                user_input[CONF_EMAIL], user_input[CONF_PASSWORD]
             )
-        self._set_confirm_only()
+            if error:
+                errors["base"] = error
+            else:
+                assert node is not None
+                return self._async_create_entry(node)
+
         return self.async_show_form(
-            step_id="confirm",
+            step_id="login",
+            data_schema=self.add_suggested_values_to_schema(
+                LOGIN_SCHEMA,
+                {CONF_EMAIL: user_input[CONF_EMAIL]} if user_input else {},
+            ),
+            errors=errors,
             description_placeholders={"name": self._name or self._address},
         )
+
+    async def _async_fetch_node(
+        self, email: str, password: str
+    ) -> tuple[KubuCloudNode | None, str | None]:
+        """Return (node, None) or (None, error key)."""
+        assert self._address is not None
+        cloud = KubuCloud(async_get_clientsession(self.hass))
+        try:
+            await cloud.login(email, password)
+            nodes = await cloud.get_ble_nodes()
+        except KubuAuthError as err:
+            _LOGGER.warning("Kubu sign-in rejected: %s", err)
+            if err.code == ERROR_TOO_MANY_TRIES:
+                return None, "too_many_attempts"
+            if err.code == ERROR_EMAIL_NOT_VERIFIED:
+                return None, "email_not_verified"
+            return None, "invalid_auth"
+        except KubuCloudError as err:
+            _LOGGER.warning("Kubu cloud error: %s", err)
+            return None, "cannot_connect"
+        node = nodes.get(normalize_mac(self._address))
+        if node is None:
+            return None, "not_in_account"
+        return node, None
+
+    def _async_create_entry(self, node: KubuCloudNode) -> ConfigFlowResult:
+        assert self._address is not None
+        data = {
+            CONF_ADDRESS: self._address,
+            CONF_DP_KEY: node.dp_key.lower(),
+            CONF_SENSOR_TYPE: node.sensor_type,
+            CONF_SERIAL: node.serial,
+        }
+        return self.async_create_entry(title=node.name or self._name, data=data)
