@@ -29,6 +29,7 @@ from .cloud import (
 )
 from .const import CONF_DP_KEY, CONF_SENSOR_TYPE, CONF_SERIAL, DOMAIN
 from .device import is_kubu_device
+from .protocol import COMPANY_ID, InvalidKey, decode, parse_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,7 +121,10 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = error
             else:
                 assert node is not None
-                return self._async_create_entry(node)
+                if not self._key_matches_live_data(node):
+                    errors["base"] = "key_mismatch"
+                else:
+                    return self._async_create_entry(node)
 
         return self.async_show_form(
             step_id="login",
@@ -154,13 +158,31 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         node = nodes.get(normalize_mac(self._address))
         if node is None:
             return None, "not_in_account"
+        try:
+            parse_key(node.dp_key)
+        except InvalidKey:
+            _LOGGER.warning("Kubu cloud sent a key that is not 32 hex characters")
+            return None, "key_mismatch"
         return node, None
+
+    def _key_matches_live_data(self, node: KubuCloudNode) -> bool:
+        """Check the key against the latest scan response, if HA has one."""
+        assert self._address is not None
+        payload = None
+        for info in async_discovered_service_info(self.hass, connectable=False):
+            if info.address == self._address:
+                payload = info.manufacturer_data.get(COMPANY_ID)
+                break
+        if payload is None:
+            return True  # nothing to check against yet
+        reading = decode(payload, parse_key(node.dp_key), node.sensor_type)
+        return reading is not None
 
     def _async_create_entry(self, node: KubuCloudNode) -> ConfigFlowResult:
         assert self._address is not None
         data = {
             CONF_ADDRESS: self._address,
-            CONF_DP_KEY: node.dp_key.lower(),
+            CONF_DP_KEY: parse_key(node.dp_key).hex(),
             CONF_SENSOR_TYPE: node.sensor_type,
             CONF_SERIAL: node.serial,
         }

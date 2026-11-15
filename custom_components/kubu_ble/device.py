@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 
-from .const import COMPANY_ID, LOCAL_NAME_PREFIXES
+from .const import LOCAL_NAME_PREFIXES
+from .protocol import COMPANY_ID
 
 
 def is_kubu_device(service_info: BluetoothServiceInfoBleak) -> bool:

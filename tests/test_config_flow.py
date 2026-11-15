@@ -19,8 +19,8 @@ from custom_components.kubu_ble.const import (
     DOMAIN,
 )
 
-from .cloud_fixtures import WINDOW_NODE, mock_cloud
-from .conftest import ADDRESS, NAME, TEST_KEY_HEX, make_service_info
+from .cloud_fixtures import RETRO_PRO_NODE, WINDOW_NODE, mock_cloud
+from .conftest import ADDRESS, LOCKED, NAME, TEST_KEY_HEX, make_service_info
 
 PATCH_SETUP = "custom_components.kubu_ble.async_setup_entry"
 PATCH_DISCOVERED = (
@@ -36,7 +36,7 @@ EXPECTED_DATA = {
 
 
 async def _start_discovery(hass: HomeAssistant, info=None):
-    info = info or make_service_info()
+    info = info or make_service_info(LOCKED)
     return await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_BLUETOOTH}, data=info
     )
@@ -46,11 +46,15 @@ async def test_discovery_and_login(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
     mock_cloud(aioclient_mock)
-    result = await _start_discovery(hass)
+    info = make_service_info(LOCKED)
+    result = await _start_discovery(hass, info)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "login"
 
-    with patch(PATCH_SETUP, return_value=True):
+    with (
+        patch(PATCH_DISCOVERED, return_value=[info]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], LOGIN
         )
@@ -101,8 +105,8 @@ async def test_user_step_picks_device(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
     mock_cloud(aioclient_mock)
-    info = make_service_info()
-    other = make_service_info(name="SomethingElse", address="11:22:33:44:55:66")
+    info = make_service_info(LOCKED)
+    other = make_service_info(None, name="SomethingElse", address="11:22:33:44:55:66")
     with patch(PATCH_DISCOVERED, return_value=[info, other]):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
@@ -114,7 +118,10 @@ async def test_user_step_picks_device(
         result["flow_id"], {CONF_ADDRESS: ADDRESS}
     )
     assert result["step_id"] == "login"
-    with patch(PATCH_SETUP, return_value=True):
+    with (
+        patch(PATCH_DISCOVERED, return_value=[info]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], LOGIN
         )
@@ -147,3 +154,27 @@ async def test_locked_out_and_unverified_errors(
         )
         assert result["errors"] == {"base": error}
         hass.config_entries.flow.async_abort(result["flow_id"])
+
+
+async def test_cloud_key_does_not_match_live_data(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "dpKey": "AB" * 16})
+    info = make_service_info(LOCKED)
+    result = await _start_discovery(hass, info)
+    with patch(PATCH_DISCOVERED, return_value=[info]):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], LOGIN
+        )
+    assert result["errors"] == {"base": "key_mismatch"}
+
+
+async def test_cloud_key_not_hex(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A key that is not 32 hex characters is an error, not a crash."""
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "dpKey": "not-a-hex-key"})
+    result = await _start_discovery(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], LOGIN)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "key_mismatch"}
