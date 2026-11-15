@@ -10,6 +10,7 @@ from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 
 ADDRESS = "94:A0:81:12:34:56"
 NAME = "KubuRetroPro-34-56"
+TEST_KEY_HEX = "000102030405060708090a0b0c0d0e0f"
 
 
 def make_service_info(
