@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from custom_components.kubu_ble.protocol import (
     InvalidKey,
     KubuState,
+    battery_status,
     decode,
     door_state_type8,
     parse,
@@ -111,3 +112,38 @@ def test_parse_key_ok(text) -> None:
 def test_parse_key_bad(text) -> None:
     with pytest.raises(InvalidKey):
         parse_key(text)
+
+
+@pytest.mark.parametrize(
+    ("mv", "status"),
+    [
+        (None, "unknown"),
+        (2000, "critical"),
+        (2134, "critical"),
+        (2150, "low"),
+        (2181, "good"),
+        (3000, "good"),
+    ],
+)
+def test_battery_status(mv, status) -> None:
+    assert battery_status(mv) == status
+
+
+def test_battery_hysteresis() -> None:
+    """Like the Kubu app: once low, only good again above 2600 mV."""
+    level = "unknown"
+    seq = []
+    for mv in (3000, 2170, 2300, 2600, 2601, 2130, 2170, 2700, None):
+        level = battery_status(mv, level)
+        seq.append(level)
+    assert seq == [
+        "good",
+        "low",  # below 2181
+        "low",  # 2300 is not enough to recover
+        "low",  # nor exactly 2600
+        "good",  # above 2600
+        "critical",  # 2134 or less
+        "critical",  # stays critical, does not go back to low
+        "good",
+        "good",  # missing reading keeps the level
+    ]

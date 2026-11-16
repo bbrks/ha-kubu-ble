@@ -14,6 +14,7 @@ from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataUpdate,
     PassiveBluetoothProcessorEntity,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -36,6 +37,11 @@ DESCRIPTIONS = {
     "tamper": BinarySensorEntityDescription(
         key="tamper",
         device_class=BinarySensorDeviceClass.TAMPER,
+    ),
+    "battery_low": BinarySensorEntityDescription(
+        key="battery_low",
+        device_class=BinarySensorDeviceClass.BATTERY,
+        entity_category=EntityCategory.DIAGNOSTIC,
     ),
 }
 
@@ -66,6 +72,9 @@ VALUES = {
     "lock": _lock,
     "door": _open,
     "tamper": _tamper,
+    "battery_low": lambda u, _r: (
+        None if u.battery_status == "unknown" else u.battery_status != "good"
+    ),
 }
 
 

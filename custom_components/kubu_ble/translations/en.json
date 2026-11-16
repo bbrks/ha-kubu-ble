@@ -30,5 +30,22 @@
       "no_devices_found": "No Kubu sensors found nearby. Make sure Bluetooth is set up and active scanning is on.",
       "not_supported": "This device is not supported."
     }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "State",
+        "state": {
+          "locked": "Locked",
+          "closed": "Closed",
+          "open": "Open",
+          "tampered": "Tampered",
+          "unknown": "Unknown"
+        }
+      },
+      "firmware": {
+        "name": "Firmware"
+      }
+    }
   }
 }

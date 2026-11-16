@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 
 from .const import LOCAL_NAME_PREFIXES
-from .protocol import COMPANY_ID, KubuReading, decode
+from .protocol import COMPANY_ID, KubuReading, battery_status, decode
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ class KubuUpdate:
     rssi: int | None
     reading: KubuReading | None
     serial: str | None = None
+    battery_status: str = "unknown"
 
 
 def is_kubu_device(service_info: BluetoothServiceInfoBleak) -> bool:
@@ -42,6 +43,7 @@ class KubuDeviceData:
         self._last_payload: bytes | None = None
         self._last_reading: KubuReading | None = None
         self._bad_count = 0
+        self.battery_status = "unknown"
 
     @property
     def last_reading(self) -> KubuReading | None:
@@ -73,10 +75,17 @@ class KubuDeviceData:
                     reading.plaintext.hex(),
                 )
                 self._bad_count = 0
+                self.battery_status = battery_status(
+                    reading.battery_mv, self.battery_status
+                )
+                # Events sometimes carry a bogus low voltage; keep the last good one.
+                if reading.battery_mv is None and self._last_reading is not None:
+                    reading = replace(reading, battery_mv=self._last_reading.battery_mv)
                 self._last_reading = reading
         return KubuUpdate(
             name=service_info.name or service_info.address,
             rssi=service_info.rssi,
             reading=self._last_reading,
             serial=self._serial,
+            battery_status=self.battery_status,
         )

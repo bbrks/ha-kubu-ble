@@ -23,6 +23,11 @@ FRAME_EVENT = 0x10
 FRAME_HEARTBEAT = 0x20
 KNOWN_FRAME_TYPES = (FRAME_EVENT, FRAME_HEARTBEAT)
 
+# Battery thresholds used by the Kubu app (millivolts).
+BATTERY_CRITICAL_MV = 2134
+BATTERY_LOW_MV = 2181
+# Once low or critical, only report good again above this (app behaviour).
+BATTERY_RECOVER_MV = 2600
 # Readings below this are glitches seen during events; ignore them.
 BATTERY_MIN_VALID_MV = 1000
 
@@ -152,3 +157,21 @@ def decode(payload: bytes, key: bytes, sensor_type: int = 8) -> KubuReading | No
     if not looks_valid(plain):
         return None
     return parse(plain, sensor_type)
+
+
+def battery_status(mv: int | None, previous: str = "unknown") -> str:
+    """Battery level, with the Kubu app's hysteresis.
+
+    Readings vary by ~150 mV between frames, so once the battery is low or
+    critical it only counts as good again above BATTERY_RECOVER_MV. A
+    missing reading keeps the previous level.
+    """
+    if mv is None:
+        return previous
+    if mv <= BATTERY_CRITICAL_MV:
+        return "critical"
+    if mv < BATTERY_LOW_MV:
+        return "critical" if previous == "critical" else "low"
+    if mv <= BATTERY_RECOVER_MV and previous in ("low", "critical"):
+        return previous
+    return "good"

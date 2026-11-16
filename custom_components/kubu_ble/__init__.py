@@ -22,7 +22,7 @@ from .const import (
 from .device import KubuDeviceData, KubuUpdate
 from .protocol import parse_key
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 _LOGGER = logging.getLogger(__name__)
 
