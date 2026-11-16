@@ -88,6 +88,18 @@ async def test_wrong_key_creates_no_entities(hass: HomeAssistant, caplog) -> Non
     assert "check the dpKey" in caplog.text
 
 
+async def test_repeated_bad_payloads_start_reauth(hass: HomeAssistant) -> None:
+    entry = await _setup(hass)
+    # Five different payloads that do not decode with the stored key.
+    for i in range(5):
+        frame = f"10010B29{i:04X}2CA7FFEA000010FF042E"
+        inject(hass, make_service_info(frame, key_hex="ff" * 16))
+        await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f["context"]["source"] for f in flows] == ["reauth"]
+    assert flows[0]["context"]["entry_id"] == entry.entry_id
+
+
 async def test_lock_has_plain_lock_wording(hass: HomeAssistant) -> None:
     """Closed-but-unlocked really is unlocked (door opens from outside)."""
     from homeassistant.helpers import entity_registry as er

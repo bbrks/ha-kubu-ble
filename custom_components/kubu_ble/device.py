@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
@@ -35,11 +36,24 @@ def is_kubu_device(service_info: BluetoothServiceInfoBleak) -> bool:
 class KubuDeviceData:
     """Decode adverts for one sensor."""
 
-    def __init__(self, key: bytes, sensor_type: int, serial: str | None = None) -> None:
-        """Set up with the sensor's dpKey."""
+    def __init__(
+        self,
+        key: bytes,
+        sensor_type: int,
+        on_bad_key: Callable[[], None] | None = None,
+        bad_key_threshold: int = 5,
+        serial: str | None = None,
+    ) -> None:
+        """Set up with the sensor's dpKey.
+
+        on_bad_key is called once after bad_key_threshold new payloads in a
+        row fail to decode, which means the stored key does not match.
+        """
         self._key = key
         self._serial = serial
         self._sensor_type = sensor_type
+        self._on_bad_key = on_bad_key
+        self._bad_key_threshold = bad_key_threshold
         self._last_payload: bytes | None = None
         self._last_reading: KubuReading | None = None
         self._bad_count = 0
@@ -67,6 +81,8 @@ class KubuDeviceData:
                         "Could not decode data from %s; check the dpKey is right",
                         service_info.address,
                     )
+                if self._bad_count == self._bad_key_threshold and self._on_bad_key:
+                    self._on_bad_key()
             else:
                 _LOGGER.debug(
                     "%s: %s (raw %s)",

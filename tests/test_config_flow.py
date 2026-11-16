@@ -138,6 +138,32 @@ async def test_user_step_no_devices(hass: HomeAssistant) -> None:
     assert result["reason"] == "no_devices_found"
 
 
+async def test_reauth_updates_key(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=ADDRESS,
+        title=NAME,
+        data={**EXPECTED_DATA, CONF_DP_KEY: "00" * 16},
+    )
+    entry.add_to_hass(hass)
+    mock_cloud(aioclient_mock)
+
+    result = await entry.start_reauth_flow(hass)
+    assert result["step_id"] == "login"
+    with (
+        patch(PATCH_DISCOVERED, return_value=[]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], LOGIN
+        )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_DP_KEY] == TEST_KEY_HEX
+
+
 async def test_locked_out_and_unverified_errors(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:

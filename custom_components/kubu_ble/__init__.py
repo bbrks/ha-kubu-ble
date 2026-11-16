@@ -14,6 +14,7 @@ from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    BAD_KEY_REAUTH_THRESHOLD,
     CONF_DP_KEY,
     CONF_SENSOR_TYPE,
     CONF_SERIAL,
@@ -44,6 +45,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> bool
     data = KubuDeviceData(
         parse_key(entry.data[CONF_DP_KEY]),
         entry.data.get(CONF_SENSOR_TYPE, SENSOR_TYPE_RETRO_PRO),
+        on_bad_key=lambda: entry.async_start_reauth(hass),
+        bad_key_threshold=BAD_KEY_REAUTH_THRESHOLD,
         serial=entry.data.get(CONF_SERIAL),
     )
     coordinator = PassiveBluetoothProcessorCoordinator(

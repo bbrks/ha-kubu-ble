@@ -28,7 +28,8 @@
     "abort": {
       "already_configured": "This device is already set up.",
       "no_devices_found": "No Kubu sensors found nearby. Make sure Bluetooth is set up and active scanning is on.",
-      "not_supported": "This device is not supported."
+      "not_supported": "This device is not supported.",
+      "reauth_successful": "The sensor key was fetched again from your Kubu account."
     }
   },
   "entity": {

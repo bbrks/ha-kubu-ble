@@ -7,6 +7,7 @@ Only the key is stored; the email and password are not.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -186,4 +187,18 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_SENSOR_TYPE: node.sensor_type,
             CONF_SERIAL: node.serial,
         }
+        if self.source == "reauth":
+            return self.async_update_reload_and_abort(
+                self._get_reauth_entry(), data_updates=data
+            )
         return self.async_create_entry(title=node.name or self._name, data=data)
+
+    # --- Re-auth (stored key does not decode) -------------------------------
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> ConfigFlowResult:
+        """Fetch the key again because the stored one does not decode."""
+        self._address = entry_data[CONF_ADDRESS]
+        self._name = self._get_reauth_entry().title
+        return await self.async_step_login()
