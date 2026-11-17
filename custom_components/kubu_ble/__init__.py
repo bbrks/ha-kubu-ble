@@ -14,7 +14,12 @@ from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    ACTIVE_SCAN_DURATION,
+    ACTIVE_SCAN_INTERVAL,
     BAD_KEY_REAUTH_THRESHOLD,
+    BURST_COOLDOWN_SECONDS,
+    BURST_SCAN_SECONDS,
+    BURST_SETTLE_SECONDS,
     CONF_DP_KEY,
     CONF_SENSOR_TYPE,
     CONF_SERIAL,
@@ -22,6 +27,7 @@ from .const import (
 )
 from .device import KubuDeviceData, KubuUpdate
 from .protocol import parse_key
+from .scan_trigger import BurstScanTrigger
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
@@ -56,11 +62,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> bool
         # The state is only in the scan response, so we need active scanning.
         mode=BluetoothScanningMode.ACTIVE,
         update_method=data.update,
+        scan_interval=ACTIVE_SCAN_INTERVAL,
+        scan_duration=ACTIVE_SCAN_DURATION,
     )
     entry.runtime_data = KubuRuntimeData(coordinator, data)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # Start only after all platforms have subscribed.
     entry.async_on_unload(coordinator.async_start())
+    entry.async_on_unload(
+        BurstScanTrigger(
+            hass,
+            address,
+            settle=BURST_SETTLE_SECONDS,
+            duration=BURST_SCAN_SECONDS,
+            cooldown=BURST_COOLDOWN_SECONDS,
+        ).async_start()
+    )
     return True
 
 

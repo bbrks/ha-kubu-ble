@@ -129,6 +129,21 @@ def test_battery_status(mv, status) -> None:
     assert battery_status(mv) == status
 
 
+def test_raw_has_state() -> None:
+    from custom_components.kubu_ble.protocol import raw_has_state
+
+    advert = bytes.fromhex("02010613094b756275526574726f50726f2d33342d3536")
+    scan_rsp = bytes([19, 0xFF, 0xCF, 0x0D]) + bytes(16)
+    other_company = bytes([19, 0xFF, 0x4C, 0x00]) + bytes(16)
+    assert not raw_has_state(advert)
+    assert raw_has_state(scan_rsp)
+    assert raw_has_state(advert + scan_rsp)
+    assert not raw_has_state(other_company)
+    assert not raw_has_state(None)
+    assert not raw_has_state(b"")
+    assert not raw_has_state(bytes([30, 0xFF, 0xCF]))  # truncated
+
+
 def test_battery_hysteresis() -> None:
     """Like the Kubu app: once low, only good again above 2600 mV."""
     level = "unknown"

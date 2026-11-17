@@ -175,3 +175,25 @@ def battery_status(mv: int | None, previous: str = "unknown") -> str:
     if mv <= BATTERY_RECOVER_MV and previous in ("low", "critical"):
         return previous
     return "good"
+
+
+def raw_has_state(raw: bytes | None) -> bool:
+    """Return True if a raw advertising packet carries Kubu state.
+
+    The sensor's normal advert only has flags and its name. The state is
+    in the scan response, as manufacturer data for company 3535.
+    """
+    if not raw:
+        return False
+    i = 0
+    while i < len(raw):
+        length = raw[i]
+        if length == 0 or i + 1 + length > len(raw):
+            break
+        ad_type = raw[i + 1]
+        if ad_type == 0xFF and length >= 3:
+            company = raw[i + 2] | raw[i + 3] << 8
+            if company == COMPANY_ID:
+                return True
+        i += 1 + length
+    return False
