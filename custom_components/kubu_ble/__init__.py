@@ -6,9 +6,6 @@ import logging
 from dataclasses import dataclass
 
 from homeassistant.components.bluetooth import BluetoothScanningMode
-from homeassistant.components.bluetooth.passive_update_processor import (
-    PassiveBluetoothProcessorCoordinator,
-)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
@@ -16,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from .const import (
     ACTIVE_SCAN_DURATION,
     ACTIVE_SCAN_INTERVAL,
+    AVAILABILITY_GRACE_SECONDS,
     BAD_KEY_REAUTH_THRESHOLD,
     BURST_COOLDOWN_SECONDS,
     BURST_SCAN_SECONDS,
@@ -25,7 +23,8 @@ from .const import (
     CONF_SERIAL,
     SENSOR_TYPE_RETRO_PRO,
 )
-from .device import KubuDeviceData, KubuUpdate
+from .coordinator import KubuCoordinator
+from .device import KubuDeviceData
 from .protocol import parse_key
 from .scan_trigger import BurstScanTrigger
 
@@ -38,7 +37,7 @@ _LOGGER = logging.getLogger(__name__)
 class KubuRuntimeData:
     """What a loaded config entry holds."""
 
-    coordinator: PassiveBluetoothProcessorCoordinator[KubuUpdate]
+    coordinator: KubuCoordinator
     device: KubuDeviceData
 
 
@@ -55,7 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> bool
         bad_key_threshold=BAD_KEY_REAUTH_THRESHOLD,
         serial=entry.data.get(CONF_SERIAL),
     )
-    coordinator = PassiveBluetoothProcessorCoordinator(
+    coordinator = KubuCoordinator(
         hass,
         _LOGGER,
         address=address,
@@ -64,6 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> bool
         update_method=data.update,
         scan_interval=ACTIVE_SCAN_INTERVAL,
         scan_duration=ACTIVE_SCAN_DURATION,
+        availability_grace=AVAILABILITY_GRACE_SECONDS,
     )
     entry.runtime_data = KubuRuntimeData(coordinator, data)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -36,3 +36,8 @@ ACTIVE_SCAN_DURATION = 10.0
 BURST_SETTLE_SECONDS = 0.3
 BURST_SCAN_SECONDS = 5.0
 BURST_COOLDOWN_SECONDS = 6.0
+
+
+# Only report the sensor unavailable after this long without any packet.
+# It normally sends something at least every ~30-90 s (see coordinator.py).
+AVAILABILITY_GRACE_SECONDS = 300.0
