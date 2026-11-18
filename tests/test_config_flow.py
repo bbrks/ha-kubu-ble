@@ -94,6 +94,37 @@ async def test_sensor_not_in_account(
     assert result["errors"] == {"base": "not_in_account"}
 
 
+async def test_second_sensor_uses_cached_keys(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """After one sign-in, the next sensor only needs a confirm."""
+    other = {**RETRO_PRO_NODE, "sNo": "94A081000002", "devAlias": "KubuRetroPro-00-02"}
+    mock_cloud(aioclient_mock, RETRO_PRO_NODE, other)
+    result = await _start_discovery(hass)
+    with (
+        patch(PATCH_DISCOVERED, return_value=[]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], LOGIN
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    result = await _start_discovery(
+        hass,
+        make_service_info(None, name="KubuRetroPro-00-02", address="94:A0:81:00:00:02"),
+    )
+    assert result["step_id"] == "confirm"
+    with (
+        patch(PATCH_DISCOVERED, return_value=[]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "KubuRetroPro-00-02"
+    assert len(aioclient_mock.mock_calls) == 2  # only one login + one rooms call
+
+
 async def test_already_configured(hass: HomeAssistant) -> None:
     MockConfigEntry(domain=DOMAIN, unique_id=ADDRESS, data={}).add_to_hass(hass)
     result = await _start_discovery(hass)
@@ -204,3 +235,35 @@ async def test_cloud_key_not_hex(
     result = await hass.config_entries.flow.async_configure(result["flow_id"], LOGIN)
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "key_mismatch"}
+
+
+async def test_confirm_falls_back_to_login_when_cached_key_fails(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A cached key that does not decode live data asks for sign-in again."""
+    other = {
+        **RETRO_PRO_NODE,
+        "sNo": "94A081000002",
+        "devAlias": "KubuRetroPro-00-02",
+        "dpKey": "AB" * 16,
+    }
+    mock_cloud(aioclient_mock, RETRO_PRO_NODE, other)
+    result = await _start_discovery(hass)
+    with (
+        patch(PATCH_DISCOVERED, return_value=[]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], LOGIN
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+    info = make_service_info(
+        LOCKED, name="KubuRetroPro-00-02", address="94:A0:81:00:00:02"
+    )
+    result = await _start_discovery(hass, info)
+    assert result["step_id"] == "confirm"
+    with patch(PATCH_DISCOVERED, return_value=[info]):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "login"

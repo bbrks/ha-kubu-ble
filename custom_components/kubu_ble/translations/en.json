@@ -15,6 +15,9 @@
           "email": "Email",
           "password": "Password"
         }
+      },
+      "confirm": {
+        "description": "Set up {name}? Its key was fetched from your Kubu account a moment ago."
       }
     },
     "error": {

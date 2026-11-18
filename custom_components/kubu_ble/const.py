@@ -8,6 +8,11 @@ CONF_DP_KEY = "dp_key"
 CONF_SENSOR_TYPE = "sensor_type"
 CONF_SERIAL = "serial"
 
+# Keys fetched from the cloud are kept in memory this long, so setting up
+# several sensors in a row only needs one sign-in.
+CLOUD_CACHE_SECONDS = 600
+DATA_CLOUD_CACHE = f"{DOMAIN}_cloud_cache"
+
 # Re-ask for sign-in after this many adverts that do not decode.
 BAD_KEY_REAUTH_THRESHOLD = 5
 

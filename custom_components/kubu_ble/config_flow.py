@@ -7,6 +7,7 @@ Only the key is stored; the email and password are not.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -17,6 +18,7 @@ from homeassistant.components.bluetooth import (
 )
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS, CONF_EMAIL, CONF_PASSWORD
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .cloud import (
@@ -28,7 +30,14 @@ from .cloud import (
     KubuCloudNode,
     normalize_mac,
 )
-from .const import CONF_DP_KEY, CONF_SENSOR_TYPE, CONF_SERIAL, DOMAIN
+from .const import (
+    CLOUD_CACHE_SECONDS,
+    CONF_DP_KEY,
+    CONF_SENSOR_TYPE,
+    CONF_SERIAL,
+    DATA_CLOUD_CACHE,
+    DOMAIN,
+)
 from .device import is_kubu_device
 from .protocol import COMPANY_ID, InvalidKey, decode, parse_key
 
@@ -43,6 +52,17 @@ def _title(info: BluetoothServiceInfoBleak) -> str:
     return info.name or info.address
 
 
+def _cached_node(hass: HomeAssistant, address: str) -> KubuCloudNode | None:
+    cache = hass.data.get(DATA_CLOUD_CACHE)
+    if not cache or time.monotonic() - cache[0] > CLOUD_CACHE_SECONDS:
+        return None
+    return cache[1].get(normalize_mac(address))
+
+
+def _store_cache(hass: HomeAssistant, nodes: dict[str, KubuCloudNode]) -> None:
+    hass.data[DATA_CLOUD_CACHE] = (time.monotonic(), nodes)
+
+
 class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Kubu BLE."""
 
@@ -53,6 +73,7 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         self._address: str | None = None
         self._name: str | None = None
         self._discovered: dict[str, BluetoothServiceInfoBleak] = {}
+        self._node: KubuCloudNode | None = None
 
     # --- Finding the device -------------------------------------------------
 
@@ -67,7 +88,7 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         self._address = discovery_info.address
         self._name = _title(discovery_info)
         self.context["title_placeholders"] = {"name": self._name}
-        return await self.async_step_login()
+        return await self._async_step_after_device()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -79,7 +100,7 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
             self._address = address
             self._name = _title(self._discovered[address])
-            return await self.async_step_login()
+            return await self._async_step_after_device()
 
         current = self._async_current_ids(include_ignore=False)
         for info in async_discovered_service_info(self.hass, connectable=False):
@@ -104,6 +125,14 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
                 }
             ),
         )
+
+    async def _async_step_after_device(self) -> ConfigFlowResult:
+        assert self._address is not None
+        if node := _cached_node(self.hass, self._address):
+            # Signed in a moment ago while setting up another sensor.
+            self._node = node
+            return await self.async_step_confirm()
+        return await self.async_step_login()
 
     # --- Kubu account -------------------------------------------------------
 
@@ -137,6 +166,21 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"name": self._name or self._address},
         )
 
+    async def async_step_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm setup when the key is already known."""
+        assert self._node is not None
+        if user_input is not None:
+            if not self._key_matches_live_data(self._node):
+                return await self.async_step_login()
+            return self._async_create_entry(self._node)
+        self._set_confirm_only()
+        return self.async_show_form(
+            step_id="confirm",
+            description_placeholders={"name": self._name or self._address},
+        )
+
     async def _async_fetch_node(
         self, email: str, password: str
     ) -> tuple[KubuCloudNode | None, str | None]:
@@ -156,6 +200,7 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         except KubuCloudError as err:
             _LOGGER.warning("Kubu cloud error: %s", err)
             return None, "cannot_connect"
+        _store_cache(self.hass, nodes)
         node = nodes.get(normalize_mac(self._address))
         if node is None:
             return None, "not_in_account"
