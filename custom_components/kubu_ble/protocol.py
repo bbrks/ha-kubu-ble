@@ -23,6 +23,10 @@ FRAME_EVENT = 0x10
 FRAME_HEARTBEAT = 0x20
 KNOWN_FRAME_TYPES = (FRAME_EVENT, FRAME_HEARTBEAT)
 
+# Byte 10, "SureShield" in the Kubu app.
+VIBRATION_ACTIVITY = 0x10  # "vibration activity"
+VIBRATION_FORCE = 0x20  # "excessive force", Security Alert
+
 # Battery thresholds used by the Kubu app (millivolts).
 BATTERY_CRITICAL_MV = 2134
 BATTERY_LOW_MV = 2181

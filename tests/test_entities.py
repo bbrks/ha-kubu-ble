@@ -139,3 +139,67 @@ async def test_no_battery_level_entity(hass: HomeAssistant) -> None:
     inject(hass, make_service_info(LOCKED))
     await hass.async_block_till_done()
     assert hass.states.get("sensor.kuburetropro_34_56_battery_level") is None
+
+
+VIBRATION = "binary_sensor.kuburetropro_34_56_vibration"
+# LOCKED frame with byte 10 set: 0x10 activity, 0x20 security.
+VIB_ACTIVITY = "10010B2901B12CA7FFEA100010FF042E"
+VIB_SECURITY = "10010B2901B12CA8FFEA200010FF042E"
+# LOCKED with the next counter: the sensor never sends a payload twice.
+LOCKED_NEXT = "10010B2901B22CA7FFEA000010FF042E"
+
+
+async def test_vibration_and_tamper_are_primary(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import entity_registry as er
+
+    await _setup(hass)
+    inject(hass, make_service_info(LOCKED))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_OFF
+
+    inject(hass, make_service_info(VIB_ACTIVITY))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_ON
+
+    inject(hass, make_service_info(LOCKED_NEXT))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_OFF
+
+    inject(hass, make_service_info(VIB_SECURITY))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_ON
+    assert hass.states.get(LOCK).state == STATE_OFF  # still locked
+
+    registry = er.async_get(hass)
+    for entity_id in (VIBRATION, TAMPER):
+        assert registry.async_get(entity_id).entity_category is None
+
+
+FORCE = "binary_sensor.kuburetropro_34_56_excessive_force"
+
+
+async def test_excessive_force_only_on_strong_hit(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    inject(hass, make_service_info(VIB_ACTIVITY))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_ON
+    assert hass.states.get(FORCE).state == STATE_OFF
+    inject(hass, make_service_info(VIB_SECURITY))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_ON
+    assert hass.states.get(FORCE).state == STATE_ON
+
+
+def test_icons_match_translation_keys() -> None:
+    """Every icon entry needs a translation key, and is valid for hassfest."""
+    import json
+    import pathlib
+
+    base = pathlib.Path(__file__).parents[1] / "custom_components" / "kubu_ble"
+    icons = json.loads((base / "icons.json").read_text())["entity"]
+    names = json.loads((base / "translations" / "en.json").read_text())["entity"]
+    for platform, entries in icons.items():
+        for key, icon in entries.items():
+            assert key in names[platform], f"{platform}.{key} has no translation"
+            assert icon["default"].startswith("mdi:")
+            assert all(v.startswith("mdi:") for v in icon.get("state", {}).values())

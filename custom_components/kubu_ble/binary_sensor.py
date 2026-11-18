@@ -21,7 +21,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import KubuConfigEntry
 from .device import KubuUpdate
 from .entity import build_update
-from .protocol import KubuState
+from .protocol import VIBRATION_FORCE, KubuState
 
 DESCRIPTIONS = {
     # LOCK device class: on = unlocked.
@@ -37,6 +37,20 @@ DESCRIPTIONS = {
     "tamper": BinarySensorEntityDescription(
         key="tamper",
         device_class=BinarySensorDeviceClass.TAMPER,
+    ),
+    # Byte 10 of the frame ("SureShield" in the Kubu app). Both stay on
+    # until the sensor sends its next frame.
+    # Any level: 0x10 "vibration activity" or 0x20 "excessive force".
+    "vibration": BinarySensorEntityDescription(
+        key="vibration",
+        translation_key="vibration",
+        device_class=BinarySensorDeviceClass.VIBRATION,
+    ),
+    # Only 0x20: "Security Alert! ... excessive force being applied".
+    "excessive_force": BinarySensorEntityDescription(
+        key="excessive_force",
+        translation_key="excessive_force",
+        device_class=BinarySensorDeviceClass.VIBRATION,
     ),
     "battery_low": BinarySensorEntityDescription(
         key="battery_low",
@@ -72,6 +86,8 @@ VALUES = {
     "lock": _lock,
     "door": _open,
     "tamper": _tamper,
+    "vibration": lambda _u, r: r.vibration != 0,
+    "excessive_force": lambda _u, r: r.vibration == VIBRATION_FORCE,
     "battery_low": lambda u, _r: (
         None if u.battery_status == "unknown" else u.battery_status != "good"
     ),

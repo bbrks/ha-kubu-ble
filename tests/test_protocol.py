@@ -144,6 +144,11 @@ def test_raw_has_state() -> None:
     assert not raw_has_state(bytes([30, 0xFF, 0xCF]))  # truncated
 
 
+def test_vibration_byte() -> None:
+    assert parse(bytes.fromhex("10010B2901B12CA7FFEA200010FF042E")).vibration == 0x20
+    assert parse(bytes.fromhex("10010B2901B12CA7FFEA000010FF042E")).vibration == 0
+
+
 def test_battery_hysteresis() -> None:
     """Like the Kubu app: once low, only good again above 2600 mV."""
     level = "unknown"

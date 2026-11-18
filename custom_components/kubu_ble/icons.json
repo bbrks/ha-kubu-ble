@@ -1,0 +1,23 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "vibration": {
+        "default": "mdi:vibrate-off",
+        "state": {
+          "on": "mdi:vibrate"
+        }
+      },
+      "excessive_force": {
+        "default": "mdi:shield-check",
+        "state": {
+          "on": "mdi:shield-alert"
+        }
+      }
+    },
+    "sensor": {
+      "firmware": {
+        "default": "mdi:chip"
+      }
+    }
+  }
+}

@@ -36,6 +36,14 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "excessive_force": {
+        "name": "Excessive force"
+      },
+      "vibration": {
+        "name": "Vibration"
+      }
+    },
     "sensor": {
       "state": {
         "name": "State",
