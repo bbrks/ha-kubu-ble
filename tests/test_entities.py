@@ -203,3 +203,56 @@ def test_icons_match_translation_keys() -> None:
             assert key in names[platform], f"{platform}.{key} has no translation"
             assert icon["default"].startswith("mdi:")
             assert all(v.startswith("mdi:") for v in icon.get("state", {}).values())
+
+
+async def test_sensitivity_sensor_from_entry(hass: HomeAssistant) -> None:
+    from custom_components.kubu_ble.const import CONF_VIB_SETTING
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=ADDRESS,
+        data={
+            CONF_ADDRESS: ADDRESS,
+            CONF_DP_KEY: TEST_KEY_HEX,
+            CONF_SENSOR_TYPE: 8,
+            CONF_VIB_SETTING: "demo",
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(_sensitivity_entity_id(hass)).state == "demo"
+
+
+async def test_sensitivity_unknown_when_not_set(hass: HomeAssistant) -> None:
+    await _setup(hass)  # no vib_setting in the Kubu account
+    assert hass.states.get(_sensitivity_entity_id(hass)).state == "unknown"
+
+
+def _sensitivity_entity_id(hass: HomeAssistant) -> str:
+    from homeassistant.helpers import entity_registry as er
+
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{ADDRESS}-vibration_sensitivity"
+    )
+    assert entity_id
+    return entity_id
+
+
+async def test_sensitivity_off_is_valid(hass: HomeAssistant) -> None:
+    from custom_components.kubu_ble.const import CONF_VIB_SETTING
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=ADDRESS,
+        data={
+            CONF_ADDRESS: ADDRESS,
+            CONF_DP_KEY: TEST_KEY_HEX,
+            CONF_SENSOR_TYPE: 8,
+            CONF_VIB_SETTING: "off",
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(_sensitivity_entity_id(hass)).state == "off"

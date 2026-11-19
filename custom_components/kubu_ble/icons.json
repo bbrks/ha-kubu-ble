@@ -17,6 +17,12 @@
     "sensor": {
       "firmware": {
         "default": "mdi:chip"
+      },
+      "vibration_sensitivity": {
+        "default": "mdi:vibrate",
+        "state": {
+          "off": "mdi:vibrate-off"
+        }
       }
     }
   }

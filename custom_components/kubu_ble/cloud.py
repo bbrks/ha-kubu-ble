@@ -83,6 +83,7 @@ class KubuCloudNode:
     sensor_class: str | None
     product_type: str | None
     firmware: str | None
+    vib_setting: str | None = None  # "low" / "high" / "demo", as last set via the app
 
 
 def normalize_mac(mac: str) -> str:
@@ -104,6 +105,7 @@ def _node_from_json(data: dict[str, Any]) -> KubuCloudNode | None:
         sensor_class=data.get("class"),
         product_type=data.get("productType"),
         firmware=data.get("fwVer"),
+        vib_setting=data.get("vibSetting"),
     )
 
 

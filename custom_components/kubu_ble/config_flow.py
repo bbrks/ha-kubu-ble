@@ -35,6 +35,7 @@ from .const import (
     CONF_DP_KEY,
     CONF_SENSOR_TYPE,
     CONF_SERIAL,
+    CONF_VIB_SETTING,
     DATA_CLOUD_CACHE,
     DOMAIN,
 )
@@ -231,10 +232,15 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_DP_KEY: parse_key(node.dp_key).hex(),
             CONF_SENSOR_TYPE: node.sensor_type,
             CONF_SERIAL: node.serial,
+            CONF_VIB_SETTING: node.vib_setting,
         }
         if self.source == "reauth":
             return self.async_update_reload_and_abort(
                 self._get_reauth_entry(), data_updates=data
+            )
+        if self.source == "reconfigure":
+            return self.async_update_reload_and_abort(
+                self._get_reconfigure_entry(), data_updates=data
             )
         return self.async_create_entry(title=node.name or self._name, data=data)
 
@@ -246,4 +252,18 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         """Fetch the key again because the stored one does not decode."""
         self._address = entry_data[CONF_ADDRESS]
         self._name = self._get_reauth_entry().title
+        return await self.async_step_login()
+
+    # --- Reconfigure ("refresh from Kubu account") ------------------------
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Sign in again to refresh the key and settings saved in Kubu.
+
+        For example after changing the vibration sensitivity in the Kubu app.
+        """
+        entry = self._get_reconfigure_entry()
+        self._address = entry.data[CONF_ADDRESS]
+        self._name = entry.title
         return await self.async_step_login()

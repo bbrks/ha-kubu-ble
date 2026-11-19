@@ -16,6 +16,7 @@ from custom_components.kubu_ble.const import (
     CONF_DP_KEY,
     CONF_SENSOR_TYPE,
     CONF_SERIAL,
+    CONF_VIB_SETTING,
     DOMAIN,
 )
 
@@ -32,6 +33,7 @@ EXPECTED_DATA = {
     CONF_DP_KEY: TEST_KEY_HEX,
     CONF_SENSOR_TYPE: 8,
     CONF_SERIAL: "AVR000000001",
+    CONF_VIB_SETTING: "high",
 }
 
 
@@ -267,3 +269,29 @@ async def test_confirm_falls_back_to_login_when_cached_key_fails(
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "login"
+
+
+async def test_reconfigure_refreshes_settings(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Reconfigure signs in again and updates key and settings (e.g. sensitivity)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=ADDRESS,
+        title=NAME,
+        data={CONF_ADDRESS: ADDRESS, CONF_DP_KEY: TEST_KEY_HEX, CONF_SENSOR_TYPE: 8},
+    )
+    entry.add_to_hass(hass)
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "vibSetting": "demo"})
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["step_id"] == "login"
+    with (
+        patch(PATCH_DISCOVERED, return_value=[]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], LOGIN
+        )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_VIB_SETTING] == "demo"

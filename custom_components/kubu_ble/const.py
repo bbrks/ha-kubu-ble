@@ -7,6 +7,7 @@ DOMAIN = "kubu_ble"
 CONF_DP_KEY = "dp_key"
 CONF_SENSOR_TYPE = "sensor_type"
 CONF_SERIAL = "serial"
+CONF_VIB_SETTING = "vib_setting"
 
 # Keys fetched from the cloud are kept in memory this long, so setting up
 # several sensors in a row only needs one sign-in.

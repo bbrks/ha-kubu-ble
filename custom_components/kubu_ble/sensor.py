@@ -16,14 +16,17 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
+    CONF_ADDRESS,
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
     EntityCategory,
     UnitOfElectricPotential,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import KubuConfigEntry
+from .const import CONF_VIB_SETTING
 from .device import KubuUpdate
 from .entity import build_update
 from .protocol import KubuState
@@ -90,6 +93,7 @@ async def async_setup_entry(
     entry.async_on_unload(
         coordinator.async_register_processor(processor, SensorEntityDescription)
     )
+    async_add_entities([KubuSensitivitySensor(entry)])
 
 
 class KubuSensorEntity(
@@ -105,3 +109,33 @@ class KubuSensorEntity(
     def native_value(self) -> str | int | None:
         """Return the state."""
         return self.processor.entity_data.get(self.entity_key)
+
+
+# As stored in the Kubu account. The app shows "high" as "Default".
+VIB_SETTINGS = ["off", "demo", "low", "high"]
+
+
+class KubuSensitivitySensor(SensorEntity):
+    """Vibration sensitivity as saved in the Kubu account.
+
+    The sensor does not broadcast its sensitivity, so this is the value from
+    the last sign-in (setup, re-auth or Reconfigure). Change it in the Kubu
+    app, then use Reconfigure to refresh it here.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "vibration_sensitivity"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = VIB_SETTINGS
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_should_poll = False
+
+    def __init__(self, entry: KubuConfigEntry) -> None:
+        """Set up from the config entry."""
+        address = entry.data[CONF_ADDRESS]
+        self._attr_unique_id = f"{address}-vibration_sensitivity"
+        self._attr_device_info = DeviceInfo(
+            connections={(CONNECTION_BLUETOOTH, address)}
+        )
+        value = entry.data.get(CONF_VIB_SETTING)
+        self._attr_native_value = value if value in VIB_SETTINGS else None

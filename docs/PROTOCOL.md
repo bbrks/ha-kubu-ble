@@ -74,6 +74,30 @@ fields (bits 5-4, 3-2, 1-0), these are `10 10 10`, `11 10 10` and
 contacts. That is an inference; the app gives the other values no meaning
 beyond the table.
 
+## Vibration sensitivity (GATT write)
+
+The only setting, changed by the Kubu app over a GATT connection. The app
+first asks the user to press the sensor's button until its LED turns green,
+and afterwards to turn the key. Not needed to read state.
+
+- Service `b16a326d-26e3-488f-8bc6-086b9bf17e51`,
+  characteristic `23268b5d-2fca-4447-9f66-9e768580c89d`
+- Value: `AES-128-ECB-encrypt(key = provKey, data = cmd FF FF … FF)`
+  (16 bytes). The app's options and the value it saves as `vibSetting`:
+
+  | App option | `vibSetting` | `cmd` |
+  |---|---|---|
+  | Off | `off` | `40` |
+  | Demo | `demo` | `30` |
+  | Low | `low` | `10` |
+  | Default | `high` | `20` |
+
+- `provKey` is a second per-sensor key from the same API as `dpKey`
+- In testing, the app's first connection attempt failed (Android GATT
+  error 133) and a retry worked
+
+The setting is not reported in the broadcast frames.
+
 ## Decryption Key
 
 Each sensor has a hardcoded 16 byte `dpKey` (32 hex characters) set at the factory.
@@ -137,6 +161,7 @@ Content-Type: application/json
       "devAlias": "KubuRetroPro-34-56",
       "dpKey": "00112233445566778899AABBCCDDEEFF",
       "provKey": "FFEEDDCCBBAA99887766554433221100",
+      "vibSetting": "high",
       "type": 8,
       "class": "retroPro",
       "fwVer": "04.46"
