@@ -11,6 +11,7 @@ AES-128-ECB block, encrypted with the sensor's per-device "dpKey".
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -44,6 +45,7 @@ class KubuState(StrEnum):
     LOCKED = "locked"  # closed and locked ("Locked" or "Secure" in the app)
     CLOSED = "closed"  # closed but not locked
     OPEN = "open"
+    TILTED = "tilted"  # tilt & turn window open in tilt ("Vent mode" in the app)
     TAMPERED = "tampered"
     UNKNOWN = "unknown"
 
@@ -109,8 +111,14 @@ def looks_valid(plain: bytes) -> bool:
 
 # --- Status decoders --------------------------------------------------------
 #
-# raw_status is bytes 8-9 of the frame, big endian. How to read it depends
-# on the sensor's "logic type" from the Kubu cloud.
+# All taken from the Kubu Android app 8.0.8: BLEScannerService
+# .evaluateSensorState() (by logic type) and .evaluateDoorSensorState()
+# (class "door", which the app checks before the type). Only type 8 has
+# been checked against a real sensor; see MODELS below.
+#
+# raw_status is bytes 8-9 of the frame, big endian.
+
+StatusDecoder = Callable[[int], KubuState]
 
 
 def door_state_type8(raw_status: int) -> KubuState:
@@ -125,20 +133,235 @@ def door_state_type8(raw_status: int) -> KubuState:
     return KubuState.TAMPERED
 
 
+def door_state_class_door(raw_status: int) -> KubuState:
+    """Class "door": Kubu Door Sensor in a lift-lever door lock.
+
+    The app shows FF01 as "Unlocked, Closed".
+    """
+    return {
+        0xFF01: KubuState.CLOSED,
+        0xFF10: KubuState.LOCKED,
+        0xFF11: KubuState.OPEN,
+        0xFFFF: KubuState.TAMPERED,
+    }.get(raw_status, KubuState.UNKNOWN)
+
+
+def contact_state(raw_status: int) -> KubuState:
+    """Logic types 2 and 3: open/closed only (magnet contact)."""
+    if raw_status & 0x3F in (55, 59, 63):
+        return KubuState.OPEN
+    return KubuState.CLOSED
+
+
+def _multipoint_state(raw_status: int, mirrored: bool) -> KubuState:
+    """Logic types 4/11 and 5/12: window with a multi-point lock.
+
+    The low 6 bits are three 2-bit fields. A field is "set" when both its
+    bits are 1. Types 5 and 12 are types 4 and 11 with the outer fields
+    swapped (the app picks one during calibration, so it is probably the
+    hand of the window).
+    """
+    low6 = raw_status & 0x3F
+    if low6 in (42, 21):
+        return KubuState.TAMPERED
+    if low6 == 63:
+        return KubuState.OPEN
+    low = low6 & 3 == 3  # bits 1-0
+    high = (low6 >> 4) & 3 == 3  # bits 5-4
+    if mirrored:
+        low, high = high, low
+    if high and not low:
+        return KubuState.LOCKED  # "secure"
+    return KubuState.CLOSED
+
+
+def multipoint_state(raw_status: int) -> KubuState:
+    """Logic types 4 and 11."""
+    return _multipoint_state(raw_status, mirrored=False)
+
+
+def multipoint_state_mirrored(raw_status: int) -> KubuState:
+    """Logic types 5 and 12."""
+    return _multipoint_state(raw_status, mirrored=True)
+
+
+def byte9_state(raw_status: int) -> KubuState:
+    """Logic types 40 and 41: byte 9 is 1 open, 2 closed, 3 secure."""
+    return {
+        1: KubuState.OPEN,
+        2: KubuState.CLOSED,
+        3: KubuState.LOCKED,
+    }.get(raw_status & 0xFF, KubuState.UNKNOWN)
+
+
+# Logic types 9 and 10: tilt & turn window. Only byte 9 is used. The sets
+# are copied as they are in the app; type 10 is type 9 with the "secure"
+# and "open" sets mostly swapped.
+_TILT_TURN_SETS: dict[int, tuple[frozenset[int], ...]] = {
+    # (secure, tilt and "movable", tilt, open)
+    9: (
+        frozenset({253, 189, 245, 181, 213, 149, 229, 165, 173}),
+        frozenset(
+            {215, 151, 223, 159, 246, 182, 230, 166, 214}
+            | {150, 222, 158, 254, 190, 218, 154, 250, 186}
+        ),
+        frozenset({247, 183, 231, 167, 219, 155, 217, 153, 251, 187, 249, 185}),
+        frozenset({235, 171, 234, 170, 233, 169, 239, 175, 237, 191, 255}),
+    ),
+    10: (
+        frozenset({235, 171, 234, 170, 233, 169, 239, 175, 237, 173, 191}),
+        frozenset(
+            {215, 151, 223, 159, 246, 182, 230, 166, 214}
+            | {150, 222, 158, 254, 190, 218, 154, 250, 186}
+        ),
+        frozenset({183, 231, 167, 219, 155, 217, 153, 251, 187, 249, 185}),
+        frozenset({253, 189, 245, 181, 213, 149, 229, 165, 247, 255}),
+    ),
+}
+
+
+class TiltTurnDecoder:
+    """Logic types 9 and 10. Needs memory, so one instance per sensor.
+
+    Like the app, it remembers whether the last tilt reading was one where
+    the handle can move. While that is set, 0xFF reads as still tilted
+    rather than open.
+    """
+
+    def __init__(self, sensor_type: int) -> None:
+        """Pick the value sets for type 9 or 10."""
+        self._secure, self._tilt_movable, self._tilt, self._open = _TILT_TURN_SETS[
+            sensor_type
+        ]
+        self.tilt_movable = False
+
+    def __call__(self, raw_status: int) -> KubuState:
+        """Decode one status."""
+        value = raw_status & 0xFF
+        if value == 0xFF and self.tilt_movable:
+            return KubuState.TILTED
+        if value in self._secure:
+            self.tilt_movable = False
+            return KubuState.LOCKED
+        if value in self._tilt_movable:
+            self.tilt_movable = True
+            return KubuState.TILTED
+        if value in self._tilt:
+            self.tilt_movable = False
+            return KubuState.TILTED
+        if value in self._open:
+            return KubuState.OPEN
+        return KubuState.TAMPERED
+
+
+SENSOR_CLASS_DOOR = "door"
+
+_DECODERS_BY_TYPE: dict[int, StatusDecoder] = {
+    2: contact_state,
+    3: contact_state,
+    4: multipoint_state,
+    11: multipoint_state,
+    5: multipoint_state_mirrored,
+    12: multipoint_state_mirrored,
+    8: door_state_type8,
+    40: byte9_state,
+    41: byte9_state,
+}
+
+
+def make_decoder(
+    sensor_type: int, sensor_class: str | None = None
+) -> StatusDecoder | None:
+    """Return a status decoder for this sensor, or None if unknown.
+
+    Make one per sensor and keep it: some decoders remember past frames.
+    """
+    if sensor_class == SENSOR_CLASS_DOOR:
+        return door_state_class_door
+    if sensor_type in _TILT_TURN_SETS:
+        return TiltTurnDecoder(sensor_type)
+    return _DECODERS_BY_TYPE.get(sensor_type)
+
+
+# --- Models -----------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class KubuModel:
+    """What one kind of sensor reports, and how sure we are about it."""
+
+    name: str
+    window: bool  # a window, not a door
+    has_lock: bool  # reports locked vs closed
+    has_tamper: bool  # has a "tampered" state
+    has_tilt: bool = False  # tilt & turn
+    verified: bool = False  # checked against a real sensor
+
+
+_DOOR_SENSOR = KubuModel("Door Sensor", False, True, True)
+_CONTACT = KubuModel("Anywhere Pro (open/closed)", True, False, False)
+_CONTACT_DOOR = KubuModel("Anywhere Pro (open/closed)", False, False, False)
+_VERTICAL_SLIDER = KubuModel("Anywhere Pro (vertical slider)", True, False, False)
+_WWK_WINDOW = KubuModel("Works with Kubu window", True, True, True)
+_WWK_WINDOW_40 = KubuModel("Works with Kubu window", True, True, False)
+_WWK_TILT_TURN = KubuModel(
+    "Works with Kubu tilt & turn window", True, True, True, has_tilt=True
+)
+
+# By logic type. Names come from the app's setup screens: type 2 is the
+# surface mounted (or fallback) setup, 3 the vertical sliding window setup,
+# 4/5 a "Works with Kubu" window (product "sas-w"), 9/10 a "Works with
+# Kubu" tilt & turn window (product "tt-w"). The app has decoders for 11
+# and 12 but no setup screen that picks them.
+MODELS: dict[int, KubuModel] = {
+    8: KubuModel("Retro Pro", False, True, True, verified=True),
+    2: _CONTACT,
+    3: _VERTICAL_SLIDER,
+    4: _WWK_WINDOW,
+    5: _WWK_WINDOW,
+    11: _WWK_WINDOW,
+    12: _WWK_WINDOW,
+    9: _WWK_TILT_TURN,
+    10: _WWK_TILT_TURN,
+    40: _WWK_WINDOW_40,
+    41: _WWK_WINDOW_40,
+}
+
+
+def model_for(
+    sensor_type: int, sensor_class: str | None = None, product_type: str | None = None
+) -> KubuModel | None:
+    """Return the model for a sensor's class and logic type, or None."""
+    if sensor_class == SENSOR_CLASS_DOOR:
+        return _DOOR_SENSOR
+    model = MODELS.get(sensor_type)
+    if model is _CONTACT and (product_type or "").endswith("-d"):
+        return _CONTACT_DOOR  # open/closed sensors can be fitted to a door too
+    return model
+
+
 # --- Frames -----------------------------------------------------------------
 
 
-def parse(plain: bytes, sensor_type: int = 8) -> KubuReading:
-    """Parse a decrypted 16 byte block."""
+def parse(
+    plain: bytes,
+    sensor_type: int = 8,
+    sensor_class: str | None = None,
+    decoder: StatusDecoder | None = None,
+) -> KubuReading:
+    """Parse a decrypted 16 byte block.
+
+    Pass the sensor's own decoder to keep its memory between frames;
+    otherwise a fresh one is made from the type and class.
+    """
     if len(plain) != BLOCK_SIZE:
         raise ValueError(f"plaintext must be {BLOCK_SIZE} bytes, got {len(plain)}")
 
     battery = int.from_bytes(plain[2:4], "big")
     raw_status = int.from_bytes(plain[8:10], "big")
-    if sensor_type == 8:
-        state = door_state_type8(raw_status)
-    else:
-        state = KubuState.UNKNOWN
+    if decoder is None:
+        decoder = make_decoder(sensor_type, sensor_class)
+    state = decoder(raw_status) if decoder is not None else KubuState.UNKNOWN
 
     return KubuReading(
         frame_type=plain[0],
@@ -153,14 +376,20 @@ def parse(plain: bytes, sensor_type: int = 8) -> KubuReading:
     )
 
 
-def decode(payload: bytes, key: bytes, sensor_type: int = 8) -> KubuReading | None:
+def decode(
+    payload: bytes,
+    key: bytes,
+    sensor_type: int = 8,
+    sensor_class: str | None = None,
+    decoder: StatusDecoder | None = None,
+) -> KubuReading | None:
     """Decrypt and parse manufacturer data. Return None if it does not decode."""
     if len(payload) != BLOCK_SIZE:
         return None
     plain = decrypt(payload, key)
     if not looks_valid(plain):
         return None
-    return parse(plain, sensor_type)
+    return parse(plain, sensor_type, sensor_class, decoder)
 
 
 def battery_status(mv: int | None, previous: str = "unknown") -> str:

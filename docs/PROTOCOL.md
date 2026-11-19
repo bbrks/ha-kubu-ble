@@ -10,7 +10,7 @@ Legacy advertising, connectable and scannable.
 
 | Packet | Content |
 |---|---|
-| ADV_IND | Flags `06`, complete local name `KubuRetroPro-XX-XX`, sometimes 16-bit service UUID `0xFC5E` |
+| ADV_IND | Flags `06`, complete local name `KubuRetroPro-XX-XX`, sometimes 16-bit service UUID `0xFC5E`. The app names other sensors `KubuDoorSensor-XX-XX` (see [Other sensors](#other-sensors-unverified)) |
 | SCAN_RSP | Manufacturer specific data: company ID **3535** (`0x0DCF`, little endian `CF 0D`) + 16 byte payload. Raw AD structure: `13 FF CF 0D` + 16 bytes |
 
 The state is **only in the scan response**, so the scanner must scan actively (send `SCAN_REQ`).
@@ -57,8 +57,8 @@ sanity check is byte 0 (high nibble set, low nibble clear) and bytes 14-15
 
 ### Status Flags
 
-How to read bytes 8-9 depends on the sensor's logic type, which the Kubu cloud reports per sensor.
-The Retro Pro is type **8**. Take the low 6 bits, `status & 0x3F`:
+How to read bytes 8-9 depends on the sensor's class and logic type, which the Kubu cloud reports per sensor.
+The Retro Pro is class `retroPro`, type **8**. Take the low 6 bits, `status & 0x3F`:
 
 | Low 6 bits | State |
 |---|---|
@@ -73,6 +73,93 @@ fields (bits 5-4, 3-2, 1-0), these are `10 10 10`, `11 10 10` and
 `11 11 11`: the first field looks like the lock and the other two like door
 contacts. That is an inference; the app gives the other values no meaning
 beyond the table.
+
+### Other sensors (unverified)
+
+Everything below is copied from the Kubu Android app 8.0.8
+(`BLEScannerService.evaluateSensorState()` and `evaluateDoorSensorState()`).
+None of it has been checked against a real sensor. Reports welcome.
+
+The app picks the decoder like this:
+
+1. If the class is `door`, use the [door sensor table](#class-door-door-sensor), whatever the type.
+2. Otherwise, use the logic type. For any type it does not know, the app
+   shows "open". This integration refuses to set those up instead.
+
+The class comes from the start of the sensor's serial number (on the QR
+code) when it is set up in the app:
+
+| Serial starts with | Class | Bluetooth name |
+|---|---|---|
+| `AVR` (Retro Pro / Anywhere Pro hardware) | `retroPro` | `KubuRetroPro-XX-XX` |
+| `AVM` (Kubu Door Sensor) | `door` | `KubuDoorSensor-XX-XX` |
+| anything else | `window` | `KubuDoorSensor-XX-XX` |
+
+So an Anywhere Pro on a window still has class `retroPro`; only the type
+tells it apart from a Retro Pro. The type is set during setup, and some
+setup screens change it after a calibration step (for example 4 to 5, or 2
+to 40/41).
+
+| Type | Product in the app (`productType`) | States |
+|---|---|---|
+| 2 | Surface mounted / open-closed setup (`gen-w`, `gen-d`); also the fallback when a window calibration fails | open, closed |
+| 3 | Vertical sliding window, one sensor per sash (`vs-w`) | open, closed |
+| 4, 5 | "Works with Kubu" window (`sas-w`). 5 is the mirror of 4 | open, closed, secure, tampered |
+| 11, 12 | Same decoding as 4 and 5. No setup screen in the app picks them | open, closed, secure, tampered |
+| 8 | Retro Pro (`af-d`). **Verified**, see above | open, closed, locked, tampered |
+| 9, 10 | "Works with Kubu" tilt & turn window (`tt-w`). 10 is roughly the mirror of 9 | open, tilt, secure, tampered |
+| 40, 41 | "Works with Kubu" window, set by a newer calibration screen | open, closed, secure, unknown |
+
+"Secure" is what the app shows for a closed and locked window. This
+integration treats it the same as "locked". "Tilt" is shown as "Vent
+mode".
+
+#### Class `door` (Door Sensor)
+
+The Kubu Door Sensor fits into a slot in a lift-lever door lock. Whole
+16-bit status, exact match:
+
+| Status | State |
+|---|---|
+| `FF01` | closed, not locked (the app shows "Unlocked, Closed") |
+| `FF10` | locked |
+| `FF11` | open |
+| `FFFF` | tampered |
+| anything else | unknown |
+
+#### Types 2 and 3
+
+Low 6 bits: 55, 59 or 63 is open, anything else is closed.
+
+#### Types 4, 5, 11, 12
+
+Read the low 6 bits as three 2-bit fields: A = bits 1-0, B = bits 3-2,
+C = bits 5-4. A field is *set* when both its bits are 1.
+
+1. 42 or 21: tampered
+2. 63: open
+3. Type 4 and 11: C set and A not set is secure. Anything else is closed.
+4. Type 5 and 12: A set and C not set is secure. Anything else is closed.
+
+#### Types 9 and 10 (tilt & turn)
+
+Only byte 9 (`status & 0xFF`) is used. The app checks these sets in order:
+
+| Set | Type 9 values | Type 10 values |
+|---|---|---|
+| secure | 253 189 245 181 213 149 229 165 173 | 235 171 234 170 233 169 239 175 237 173 191 |
+| tilt (handle can move) | 215 151 223 159 246 182 230 166 214 150 222 158 254 190 218 154 250 186 | same as type 9 |
+| tilt | 247 183 231 167 219 155 217 153 251 187 249 185 | 183 231 167 219 155 217 153 251 187 249 185 |
+| open | 235 171 234 170 233 169 239 175 237 191 255 | 253 189 245 181 213 149 229 165 247 255 |
+| anything else | tampered | tampered |
+
+The decoder has memory. A value in the "tilt (handle can move)" set sets a
+flag; "secure" and plain "tilt" clear it. While the flag is set, 255 reads
+as tilt instead of open. The flag is per sensor.
+
+#### Types 40 and 41
+
+Only byte 9: 1 open, 2 closed, 3 secure, anything else unknown.
 
 ## Vibration sensitivity (GATT write)
 
@@ -171,4 +258,4 @@ Content-Type: application/json
 ```
 
 Match a sensor by `sNo`, its Bluetooth address without colons.
-Use `type` to pick the status decoding (see [Status Flags](#status-flags)).
+Use `type` and `class` to pick the status decoding (see [Status Flags](#status-flags)).
