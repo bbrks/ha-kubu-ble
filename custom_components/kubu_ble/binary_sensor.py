@@ -21,7 +21,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import KubuConfigEntry
 from .device import KubuUpdate
 from .entity import build_update
-from .protocol import VIBRATION_FORCE, KubuState
+from .protocol import VIBRATION_FORCE, KubuModel, KubuState
 
 DESCRIPTIONS = {
     # LOCK device class: on = unlocked.
@@ -29,10 +29,19 @@ DESCRIPTIONS = {
         key="lock",
         device_class=BinarySensorDeviceClass.LOCK,
     ),
-    # DOOR device class: on = open.
+    # DOOR / WINDOW device class: on = open (a tilted window counts as open).
     "door": BinarySensorEntityDescription(
         key="door",
         device_class=BinarySensorDeviceClass.DOOR,
+    ),
+    "window": BinarySensorEntityDescription(
+        key="window",
+        device_class=BinarySensorDeviceClass.WINDOW,
+    ),
+    # Tilt & turn windows only: on = open in tilt ("Vent mode" in the app).
+    "tilted": BinarySensorEntityDescription(
+        key="tilted",
+        translation_key="tilted",
     ),
     "tamper": BinarySensorEntityDescription(
         key="tamper",
@@ -60,20 +69,30 @@ DESCRIPTIONS = {
 }
 
 
+_OPEN_STATES = (KubuState.OPEN, KubuState.TILTED)
+_CLOSED_STATES = (KubuState.CLOSED, KubuState.LOCKED)
+
+
 def _lock(_u, r) -> bool | None:
     if r.state is KubuState.LOCKED:
         return False
-    if r.state in (KubuState.CLOSED, KubuState.OPEN):
+    if r.state in (KubuState.CLOSED, *_OPEN_STATES):
         return True
     return None
 
 
 def _open(_u, r) -> bool | None:
-    if r.state is KubuState.OPEN:
+    if r.state in _OPEN_STATES:
         return True
-    if r.state in (KubuState.CLOSED, KubuState.LOCKED):
+    if r.state in _CLOSED_STATES:
         return False
     return None
+
+
+def _tilted(_u, r) -> bool | None:
+    if r.state in (KubuState.TAMPERED, KubuState.UNKNOWN):
+        return None
+    return r.state is KubuState.TILTED
 
 
 def _tamper(_u, r) -> bool | None:
@@ -85,6 +104,8 @@ def _tamper(_u, r) -> bool | None:
 VALUES = {
     "lock": _lock,
     "door": _open,
+    "window": _open,
+    "tilted": _tilted,
     "tamper": _tamper,
     "vibration": lambda _u, r: r.vibration != 0,
     "excessive_force": lambda _u, r: r.vibration == VIBRATION_FORCE,
@@ -94,11 +115,19 @@ VALUES = {
 }
 
 
-def update_to_bluetooth_data_update(
-    update: KubuUpdate,
-) -> PassiveBluetoothDataUpdate[bool | None]:
-    """Convert a Kubu update to binary sensor data."""
-    return build_update(update, DESCRIPTIONS, VALUES)
+def keys_for_model(model: KubuModel | None) -> set[str]:
+    """Return the binary sensors this model can report."""
+    keys = {"vibration", "excessive_force", "battery_low"}
+    if model is None:
+        return keys
+    keys.add("window" if model.window else "door")
+    if model.has_lock:
+        keys.add("lock")
+    if model.has_tamper:
+        keys.add("tamper")
+    if model.has_tilt:
+        keys.add("tilted")
+    return keys
 
 
 async def async_setup_entry(
@@ -108,7 +137,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up Kubu binary sensors."""
     coordinator = entry.runtime_data.coordinator
-    processor = PassiveBluetoothDataProcessor(update_to_bluetooth_data_update)
+    keys = keys_for_model(entry.runtime_data.device.model)
+    descriptions = {k: d for k, d in DESCRIPTIONS.items() if k in keys}
+    values = {k: fn for k, fn in VALUES.items() if k in keys}
+
+    def to_data_update(update: KubuUpdate) -> PassiveBluetoothDataUpdate[bool | None]:
+        return build_update(update, descriptions, values)
+
+    processor = PassiveBluetoothDataProcessor(to_data_update)
     entry.async_on_unload(
         processor.async_add_entities_listener(
             KubuBinarySensorEntity, async_add_entities

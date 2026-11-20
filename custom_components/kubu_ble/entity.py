@@ -27,7 +27,11 @@ def build_update[T](
     Entities are only created once we have a good reading, so a wrong key
     does not leave a set of empty entities behind.
     """
-    device = DeviceInfo(name=update.name, manufacturer=MANUFACTURER, model="Retro Pro")
+    device = DeviceInfo(name=update.name, manufacturer=MANUFACTURER)
+    if update.model:
+        device["model"] = update.model
+    if update.model_id:
+        device["model_id"] = update.model_id
     if update.serial:
         device["serial_number"] = update.serial
     reading = update.reading

@@ -26,7 +26,13 @@ from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceIn
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import KubuConfigEntry
-from .const import CONF_VIB_SETTING
+from .const import (
+    CONF_SENSOR_CLASS,
+    CONF_SENSOR_TYPE,
+    CONF_VIB_SETTING,
+    SENSOR_CLASS_RETRO_PRO,
+    SENSOR_TYPE_RETRO_PRO,
+)
 from .device import KubuUpdate
 from .entity import build_update
 from .protocol import KubuState
@@ -93,7 +99,7 @@ async def async_setup_entry(
     entry.async_on_unload(
         coordinator.async_register_processor(processor, SensorEntityDescription)
     )
-    async_add_entities([KubuSensitivitySensor(entry)])
+    async_add_entities([KubuSensitivitySensor(entry), KubuBatteryTypeSensor(entry)])
 
 
 class KubuSensorEntity(
@@ -139,3 +145,38 @@ class KubuSensitivitySensor(SensorEntity):
         )
         value = entry.data.get(CONF_VIB_SETTING)
         self._attr_native_value = value if value in VIB_SETTINGS else None
+
+
+# Batteries per sensor class, as the Kubu app's BLE sensor info shows them:
+# 2× CR1632 for class retroPro (Retro Pro / Anywhere Pro), else 2× CR2025.
+BATTERY_RETRO_PRO = "2× CR1632"
+BATTERY_OTHER = "2× CR2025"
+
+
+class KubuBatteryTypeSensor(SensorEntity):
+    """Which batteries the sensor takes (fixed per model)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "battery_type"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_should_poll = False
+
+    def __init__(self, entry: KubuConfigEntry) -> None:
+        """Set up from the config entry."""
+        address = entry.data[CONF_ADDRESS]
+        self._attr_unique_id = f"{address}-battery_type"
+        self._attr_device_info = DeviceInfo(
+            connections={(CONNECTION_BLUETOOTH, address)}
+        )
+        sensor_class = entry.data.get(CONF_SENSOR_CLASS)
+        if (
+            sensor_class is None
+            and entry.data.get(CONF_SENSOR_TYPE) == SENSOR_TYPE_RETRO_PRO
+        ):
+            sensor_class = SENSOR_CLASS_RETRO_PRO  # set up before the class was stored
+        if sensor_class is None:
+            self._attr_native_value = None
+        elif sensor_class == SENSOR_CLASS_RETRO_PRO:
+            self._attr_native_value = BATTERY_RETRO_PRO
+        else:
+            self._attr_native_value = BATTERY_OTHER

@@ -20,6 +20,7 @@ from custom_components.kubu_ble.cloud import (
     KubuCloud,
     KubuCloudError,
 )
+from custom_components.kubu_ble.protocol import model_for
 
 
 async def main(email: str) -> int:
@@ -42,10 +43,15 @@ async def main(email: str) -> int:
         print("Signed in, but no BLE sensors found in this account.")
         return 1
     for mac, node in nodes.items():
+        model = model_for(node.sensor_type, node.sensor_class, node.product_type)
+        if model is None:
+            known = "NOT KNOWN"
+        else:
+            known = f"{model.name}{'' if model.verified else ' (unverified)'}"
         print(
             f"{node.name}  mac={mac}  type={node.sensor_type}  class={node.sensor_class}"
             f"  product={node.product_type}  serial={node.serial}  fw={node.firmware}"
-            f"  dpKey={node.dp_key[:4]}…"
+            f"  dpKey={node.dp_key[:4]}…  model={known}"
         )
     return 0
 

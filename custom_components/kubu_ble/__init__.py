@@ -19,6 +19,8 @@ from .const import (
     BURST_SCAN_SECONDS,
     BURST_SETTLE_SECONDS,
     CONF_DP_KEY,
+    CONF_PRODUCT_TYPE,
+    CONF_SENSOR_CLASS,
     CONF_SENSOR_TYPE,
     CONF_SERIAL,
     SENSOR_TYPE_RETRO_PRO,
@@ -53,6 +55,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> bool
         on_bad_key=lambda: entry.async_start_reauth(hass),
         bad_key_threshold=BAD_KEY_REAUTH_THRESHOLD,
         serial=entry.data.get(CONF_SERIAL),
+        sensor_class=entry.data.get(CONF_SENSOR_CLASS),
+        product_type=entry.data.get(CONF_PRODUCT_TYPE),
     )
     coordinator = KubuCoordinator(
         hass,

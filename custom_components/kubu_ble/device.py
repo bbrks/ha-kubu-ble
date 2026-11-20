@@ -9,7 +9,15 @@ from dataclasses import dataclass, replace
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 
 from .const import LOCAL_NAME_PREFIXES
-from .protocol import COMPANY_ID, KubuReading, battery_status, decode
+from .protocol import (
+    COMPANY_ID,
+    KubuModel,
+    KubuReading,
+    battery_status,
+    decode,
+    make_decoder,
+    model_for,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +31,8 @@ class KubuUpdate:
     reading: KubuReading | None
     serial: str | None = None
     battery_status: str = "unknown"
+    model: str | None = None
+    model_id: str | None = None
 
 
 def is_kubu_device(service_info: BluetoothServiceInfoBleak) -> bool:
@@ -43,6 +53,8 @@ class KubuDeviceData:
         on_bad_key: Callable[[], None] | None = None,
         bad_key_threshold: int = 5,
         serial: str | None = None,
+        sensor_class: str | None = None,
+        product_type: str | None = None,
     ) -> None:
         """Set up with the sensor's dpKey.
 
@@ -52,11 +64,18 @@ class KubuDeviceData:
         self._key = key
         self._serial = serial
         self._sensor_type = sensor_type
+        self._sensor_class = sensor_class
+        self._decoder = make_decoder(sensor_type, sensor_class)
+        self.model: KubuModel | None = model_for(
+            sensor_type, sensor_class, product_type
+        )
+        self._model_id = " ".join(filter(None, [sensor_class, f"type {sensor_type}"]))
         self._on_bad_key = on_bad_key
         self._bad_key_threshold = bad_key_threshold
+        self._bad_count = 0
         self._last_payload: bytes | None = None
         self._last_reading: KubuReading | None = None
-        self._bad_count = 0
+        self.sensor_type = sensor_type
         self.battery_status = "unknown"
 
     @property
@@ -73,7 +92,9 @@ class KubuDeviceData:
         payload = service_info.manufacturer_data.get(COMPANY_ID)
         if payload is not None and payload != self._last_payload:
             self._last_payload = payload
-            reading = decode(payload, self._key, self._sensor_type)
+            reading = decode(
+                payload, self._key, self._sensor_type, self._sensor_class, self._decoder
+            )
             if reading is None:
                 self._bad_count += 1
                 if self._bad_count == 1:
@@ -104,4 +125,6 @@ class KubuDeviceData:
             reading=self._last_reading,
             serial=self._serial,
             battery_status=self.battery_status,
+            model=self.model.name if self.model else None,
+            model_id=self._model_id,
         )

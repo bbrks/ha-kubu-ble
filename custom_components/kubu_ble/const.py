@@ -7,6 +7,8 @@ DOMAIN = "kubu_ble"
 CONF_DP_KEY = "dp_key"
 CONF_SENSOR_TYPE = "sensor_type"
 CONF_SERIAL = "serial"
+CONF_SENSOR_CLASS = "sensor_class"
+CONF_PRODUCT_TYPE = "product_type"
 CONF_VIB_SETTING = "vib_setting"
 
 # Keys fetched from the cloud are kept in memory this long, so setting up
@@ -18,9 +20,13 @@ DATA_CLOUD_CACHE = f"{DOMAIN}_cloud_cache"
 BAD_KEY_REAUTH_THRESHOLD = 5
 
 # Sensor "logic" type from the Kubu cloud. 8 is the Retro Pro door sensor.
+# The other known types are in protocol.MODELS.
 SENSOR_TYPE_RETRO_PRO = 8
+SENSOR_CLASS_RETRO_PRO = "retroPro"
 
-LOCAL_NAME_PREFIXES = ("KubuRetroPro-",)
+# The Kubu app names Retro Pro / Anywhere Pro sensors (serial "AVR...")
+# KubuRetroPro-XX-XX and all other BLE sensors KubuDoorSensor-XX-XX.
+LOCAL_NAME_PREFIXES = ("KubuRetroPro-", "KubuDoorSensor-")
 
 MANUFACTURER = "Kubu"
 
@@ -42,7 +48,6 @@ ACTIVE_SCAN_DURATION = 10.0
 BURST_SETTLE_SECONDS = 0.3
 BURST_SCAN_SECONDS = 5.0
 BURST_COOLDOWN_SECONDS = 6.0
-
 
 # Only report the sensor unavailable after this long without any packet.
 # It normally sends something at least every ~30-90 s (see coordinator.py).

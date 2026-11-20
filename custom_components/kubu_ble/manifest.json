@@ -9,6 +9,10 @@
     {
       "local_name": "KubuRetroPro-*",
       "connectable": false
+    },
+    {
+      "local_name": "KubuDoorSensor-*",
+      "connectable": false
     }
   ],
   "codeowners": [

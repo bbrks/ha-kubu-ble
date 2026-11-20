@@ -18,6 +18,10 @@
       },
       "confirm": {
         "description": "Set up {name}? Its key was fetched from your Kubu account a moment ago."
+      },
+      "unverified": {
+        "title": "Untested sensor",
+        "description": "{name} is a **{model}** ({sensor_class}, type {sensor_type}). This model has not been tested with this integration yet.\n\nIt is read the same way the Kubu app reads it, so it should work, but some states may be wrong or missing. Please tell us how it goes, good or bad: open an issue at {issues_url} with the diagnostics file (*Kubu BLE → ⋮ → Download diagnostics*) and what you did (locked, opened, tilted…).\n\nSet it up anyway?"
       }
     },
     "error": {
@@ -32,6 +36,7 @@
       "already_configured": "This device is already set up.",
       "no_devices_found": "No Kubu sensors found nearby. Make sure Bluetooth is set up and active scanning is on.",
       "not_supported": "This device is not supported.",
+      "unsupported_sensor": "This Kubu sensor ({sensor_class}, type {sensor_type}) is not known to this integration yet. Please open an issue at {issues_url} with the class and type shown here.",
       "reauth_successful": "The sensor key was fetched again from your Kubu account.",
       "reconfigure_successful": "Refreshed from your Kubu account."
     }
@@ -43,6 +48,9 @@
       },
       "vibration": {
         "name": "Vibration"
+      },
+      "tilted": {
+        "name": "Tilted"
       }
     },
     "sensor": {
@@ -61,12 +69,16 @@
           "locked": "Locked",
           "closed": "Closed",
           "open": "Open",
+          "tilted": "Tilted",
           "tampered": "Tampered",
           "unknown": "Unknown"
         }
       },
       "firmware": {
         "name": "Firmware"
+      },
+      "battery_type": {
+        "name": "Battery type"
       }
     }
   }

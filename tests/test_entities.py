@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from homeassistant.const import CONF_ADDRESS, STATE_OFF, STATE_ON
+from homeassistant.const import CONF_ADDRESS, STATE_OFF, STATE_ON, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -112,11 +112,17 @@ async def test_lock_has_plain_lock_wording(hass: HomeAssistant) -> None:
     assert hass.states.get(LOCK).state == STATE_ON  # unlocked
 
 
-async def test_firmware(hass: HomeAssistant) -> None:
+async def test_firmware_and_battery_type(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import entity_registry as er
+
     await _setup(hass)
     inject(hass, make_service_info(LOCKED))
     await hass.async_block_till_done()
     assert hass.states.get("sensor.kuburetropro_34_56_firmware").state == "04.46"
+    battery_type = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{ADDRESS}-battery_type"
+    )
+    assert hass.states.get(battery_type).state == "2× CR1632"
 
 
 async def test_battery_low_uses_hysteresis(hass: HomeAssistant) -> None:
@@ -256,3 +262,104 @@ async def test_sensitivity_off_is_valid(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert hass.states.get(_sensitivity_entity_id(hass)).state == "off"
+
+
+def _frame(status_hex: str) -> str:
+    """A real Retro Pro frame with bytes 8-9 swapped for status_hex."""
+    return f"10010B2901B12CA7{status_hex}000010FF042E"
+
+
+async def _setup_model(hass: HomeAssistant, **data) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=ADDRESS,
+        data={CONF_ADDRESS: ADDRESS, CONF_DP_KEY: TEST_KEY_HEX, **data},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_tilt_turn_window(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.kubu_ble.const import CONF_PRODUCT_TYPE, CONF_SENSOR_CLASS
+
+    entry = await _setup_model(
+        hass,
+        **{
+            CONF_SENSOR_TYPE: 9,
+            CONF_SENSOR_CLASS: "retroPro",
+            CONF_PRODUCT_TYPE: "tt-w",
+        },
+    )
+    window = "binary_sensor.kuburetropro_34_56_window"
+    tilted = "binary_sensor.kuburetropro_34_56_tilted"
+
+    inject(hass, make_service_info(_frame("FFFD")))  # secure
+    await hass.async_block_till_done()
+    assert hass.states.get(window).state == STATE_OFF
+    assert hass.states.get(LOCK).state == STATE_OFF
+    assert hass.states.get(tilted).state == STATE_OFF
+    assert hass.states.get(TAMPER).state == STATE_OFF
+    assert hass.states.get(DOOR) is None  # a window, not a door
+
+    inject(hass, make_service_info(_frame("FFD7")))  # tilt
+    await hass.async_block_till_done()
+    assert hass.states.get(window).state == STATE_ON
+    assert hass.states.get(tilted).state == STATE_ON
+    assert hass.states.get(LOCK).state == STATE_ON
+
+    inject(hass, make_service_info(_frame("FFEB")))  # open
+    await hass.async_block_till_done()
+    assert hass.states.get(window).state == STATE_ON
+    assert hass.states.get(tilted).state == STATE_OFF
+
+    inject(hass, make_service_info(_frame("FF00")))  # in no set: tampered
+    await hass.async_block_till_done()
+    assert hass.states.get(TAMPER).state == STATE_ON
+    assert hass.states.get(tilted).state == STATE_UNKNOWN
+    assert hass.states.get(window).state == STATE_UNKNOWN
+
+    [device] = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert device.model == "Works with Kubu tilt & turn window"
+    assert device.model_id == "retroPro type 9"
+
+
+async def test_open_closed_only_sensor(hass: HomeAssistant) -> None:
+    """Types 2 and 3 only know open and closed: no lock or tamper entity."""
+    from custom_components.kubu_ble.const import CONF_SENSOR_CLASS
+
+    await _setup_model(hass, **{CONF_SENSOR_TYPE: 2, CONF_SENSOR_CLASS: "retroPro"})
+    window = "binary_sensor.kuburetropro_34_56_window"
+
+    inject(hass, make_service_info(_frame("FFFF")))
+    await hass.async_block_till_done()
+    assert hass.states.get(window).state == STATE_ON
+    assert hass.states.get(LOCK) is None
+    assert hass.states.get(TAMPER) is None
+    assert hass.states.get(BATT_LOW) is not None
+
+    inject(hass, make_service_info(_frame("FFEA")))
+    await hass.async_block_till_done()
+    assert hass.states.get(window).state == STATE_OFF
+
+
+async def test_door_sensor_class(hass: HomeAssistant) -> None:
+    from custom_components.kubu_ble.const import CONF_SENSOR_CLASS
+
+    await _setup_model(hass, **{CONF_SENSOR_TYPE: 2, CONF_SENSOR_CLASS: "door"})
+    inject(hass, make_service_info(_frame("FF10")))
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK).state == STATE_OFF
+    assert hass.states.get(DOOR).state == STATE_OFF
+
+    inject(hass, make_service_info(_frame("FF01")))  # unlocked, closed
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK).state == STATE_ON
+    assert hass.states.get(DOOR).state == STATE_OFF
+
+    inject(hass, make_service_info(_frame("FF00")))  # unknown value
+    await hass.async_block_till_done()
+    assert hass.states.get(TAMPER).state == "unknown"

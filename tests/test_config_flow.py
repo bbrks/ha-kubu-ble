@@ -14,13 +14,15 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 from custom_components.kubu_ble.cloud import API_BASE
 from custom_components.kubu_ble.const import (
     CONF_DP_KEY,
+    CONF_PRODUCT_TYPE,
+    CONF_SENSOR_CLASS,
     CONF_SENSOR_TYPE,
     CONF_SERIAL,
     CONF_VIB_SETTING,
     DOMAIN,
 )
 
-from .cloud_fixtures import RETRO_PRO_NODE, WINDOW_NODE, mock_cloud
+from .cloud_fixtures import DOOR_SENSOR_NODE, RETRO_PRO_NODE, WINDOW_NODE, mock_cloud
 from .conftest import ADDRESS, LOCKED, NAME, TEST_KEY_HEX, make_service_info
 
 PATCH_SETUP = "custom_components.kubu_ble.async_setup_entry"
@@ -33,6 +35,8 @@ EXPECTED_DATA = {
     CONF_DP_KEY: TEST_KEY_HEX,
     CONF_SENSOR_TYPE: 8,
     CONF_SERIAL: "AVR000000001",
+    CONF_SENSOR_CLASS: "retroPro",
+    CONF_PRODUCT_TYPE: "af-d",
     CONF_VIB_SETTING: "high",
 }
 
@@ -94,6 +98,30 @@ async def test_sensor_not_in_account(
     result = await _start_discovery(hass)
     result = await hass.config_entries.flow.async_configure(result["flow_id"], LOGIN)
     assert result["errors"] == {"base": "not_in_account"}
+
+
+async def test_unsupported_sensor_type(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A logic type the Kubu app does not know either."""
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "type": 99, "class": "window"})
+    result = await _start_discovery(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], LOGIN)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "unsupported_sensor"
+
+
+async def test_cloud_key_does_not_match_live_data(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "dpKey": "AB" * 16})
+    info = make_service_info(LOCKED)
+    result = await _start_discovery(hass, info)
+    with patch(PATCH_DISCOVERED, return_value=[info]):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], LOGIN
+        )
+    assert result["errors"] == {"base": "key_mismatch"}
 
 
 async def test_second_sensor_uses_cached_keys(
@@ -215,17 +243,89 @@ async def test_locked_out_and_unverified_errors(
         hass.config_entries.flow.async_abort(result["flow_id"])
 
 
-async def test_cloud_key_does_not_match_live_data(
+async def test_unverified_model_asks_first(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
-    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "dpKey": "AB" * 16})
-    info = make_service_info(LOCKED)
-    result = await _start_discovery(hass, info)
-    with patch(PATCH_DISCOVERED, return_value=[info]):
+    """A model that has not been tested gets an extra step asking for reports."""
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "productType": "tt-w", "type": 9})
+    result = await _start_discovery(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], LOGIN)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "unverified"
+    placeholders = result["description_placeholders"]
+    assert placeholders["model"] == "Works with Kubu tilt & turn window"
+    assert placeholders["sensor_type"] == "9"
+
+    with patch(PATCH_SETUP, return_value=True):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_SENSOR_TYPE] == 9
+    assert result["data"][CONF_PRODUCT_TYPE] == "tt-w"
+
+
+async def test_door_class_uses_door_sensor_model(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The app decodes "door" class sensors by class, whatever the type."""
+    mock_cloud(aioclient_mock, DOOR_SENSOR_NODE)
+    result = await _start_discovery(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], LOGIN)
+    assert result["step_id"] == "unverified"
+    assert result["description_placeholders"]["model"] == "Door Sensor"
+
+
+async def test_reauth_skips_unverified_step(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """The user already said yes once; a new key does not ask again."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=ADDRESS,
+        title=NAME,
+        data={
+            CONF_ADDRESS: ADDRESS,
+            CONF_DP_KEY: "00" * 16,
+            CONF_SENSOR_TYPE: 9,
+            CONF_SENSOR_CLASS: "retroPro",
+        },
+    )
+    entry.add_to_hass(hass)
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "type": 9})
+    result = await entry.start_reauth_flow(hass)
+    with patch(PATCH_SETUP, return_value=True):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], LOGIN
         )
-    assert result["errors"] == {"base": "key_mismatch"}
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_DP_KEY] == TEST_KEY_HEX
+
+
+async def test_reconfigure_refreshes_settings(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Reconfigure signs in again and updates key and settings (e.g. sensitivity)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=ADDRESS,
+        title=NAME,
+        data={CONF_ADDRESS: ADDRESS, CONF_DP_KEY: TEST_KEY_HEX, CONF_SENSOR_TYPE: 8},
+    )
+    entry.add_to_hass(hass)
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "vibSetting": "demo"})
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["step_id"] == "login"
+    with (
+        patch(PATCH_DISCOVERED, return_value=[]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], LOGIN
+        )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_VIB_SETTING] == "demo"
+    assert entry.data[CONF_PRODUCT_TYPE] == "af-d"
 
 
 async def test_cloud_key_not_hex(
@@ -269,29 +369,3 @@ async def test_confirm_falls_back_to_login_when_cached_key_fails(
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "login"
-
-
-async def test_reconfigure_refreshes_settings(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
-) -> None:
-    """Reconfigure signs in again and updates key and settings (e.g. sensitivity)."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        unique_id=ADDRESS,
-        title=NAME,
-        data={CONF_ADDRESS: ADDRESS, CONF_DP_KEY: TEST_KEY_HEX, CONF_SENSOR_TYPE: 8},
-    )
-    entry.add_to_hass(hass)
-    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "vibSetting": "demo"})
-    result = await entry.start_reconfigure_flow(hass)
-    assert result["step_id"] == "login"
-    with (
-        patch(PATCH_DISCOVERED, return_value=[]),
-        patch(PATCH_SETUP, return_value=True),
-    ):
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], LOGIN
-        )
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "reconfigure_successful"
-    assert entry.data[CONF_VIB_SETTING] == "demo"

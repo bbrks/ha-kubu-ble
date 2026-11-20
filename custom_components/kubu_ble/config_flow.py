@@ -33,6 +33,8 @@ from .cloud import (
 from .const import (
     CLOUD_CACHE_SECONDS,
     CONF_DP_KEY,
+    CONF_PRODUCT_TYPE,
+    CONF_SENSOR_CLASS,
     CONF_SENSOR_TYPE,
     CONF_SERIAL,
     CONF_VIB_SETTING,
@@ -40,9 +42,18 @@ from .const import (
     DOMAIN,
 )
 from .device import is_kubu_device
-from .protocol import COMPANY_ID, InvalidKey, decode, parse_key
+from .protocol import (
+    COMPANY_ID,
+    InvalidKey,
+    KubuModel,
+    decode,
+    model_for,
+    parse_key,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+ISSUES_URL = "https://github.com/bbrks/ha-kubu-ble/issues"
 
 LOGIN_SCHEMA = vol.Schema(
     {vol.Required(CONF_EMAIL): str, vol.Required(CONF_PASSWORD): str}
@@ -51,6 +62,10 @@ LOGIN_SCHEMA = vol.Schema(
 
 def _title(info: BluetoothServiceInfoBleak) -> str:
     return info.name or info.address
+
+
+def _model(node: KubuCloudNode) -> KubuModel | None:
+    return model_for(node.sensor_type, node.sensor_class, node.product_type)
 
 
 def _cached_node(hass: HomeAssistant, address: str) -> KubuCloudNode | None:
@@ -152,10 +167,19 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = error
             else:
                 assert node is not None
+                if _model(node) is None:
+                    return self.async_abort(
+                        reason="unsupported_sensor",
+                        description_placeholders={
+                            "sensor_class": node.sensor_class or "?",
+                            "sensor_type": str(node.sensor_type),
+                            "issues_url": ISSUES_URL,
+                        },
+                    )
                 if not self._key_matches_live_data(node):
                     errors["base"] = "key_mismatch"
                 else:
-                    return self._async_create_entry(node)
+                    return await self._async_finish(node)
 
         return self.async_show_form(
             step_id="login",
@@ -173,13 +197,47 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         """Confirm setup when the key is already known."""
         assert self._node is not None
         if user_input is not None:
-            if not self._key_matches_live_data(self._node):
+            if _model(self._node) is None or not self._key_matches_live_data(
+                self._node
+            ):
                 return await self.async_step_login()
-            return self._async_create_entry(self._node)
+            return await self._async_finish(self._node)
         self._set_confirm_only()
         return self.async_show_form(
             step_id="confirm",
             description_placeholders={"name": self._name or self._address},
+        )
+
+    async def _async_finish(self, node: KubuCloudNode) -> ConfigFlowResult:
+        """Create the entry, warning first if the model is not verified."""
+        model = _model(node)
+        if (
+            model is not None
+            and not model.verified
+            and self.source not in ("reauth", "reconfigure")
+        ):
+            self._node = node
+            return await self.async_step_unverified()
+        return self._async_create_entry(node)
+
+    async def async_step_unverified(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Say that this model has not been tested, and ask for reports."""
+        assert self._node is not None
+        if user_input is not None:
+            return self._async_create_entry(self._node)
+        model = _model(self._node)
+        assert model is not None
+        return self.async_show_form(
+            step_id="unverified",
+            description_placeholders={
+                "name": self._name or self._address or "",
+                "model": model.name,
+                "sensor_class": self._node.sensor_class or "?",
+                "sensor_type": str(self._node.sensor_type),
+                "issues_url": ISSUES_URL,
+            },
         )
 
     async def _async_fetch_node(
@@ -222,7 +280,9 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
                 break
         if payload is None:
             return True  # nothing to check against yet
-        reading = decode(payload, parse_key(node.dp_key), node.sensor_type)
+        reading = decode(
+            payload, parse_key(node.dp_key), node.sensor_type, node.sensor_class
+        )
         return reading is not None
 
     def _async_create_entry(self, node: KubuCloudNode) -> ConfigFlowResult:
@@ -232,6 +292,8 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_DP_KEY: parse_key(node.dp_key).hex(),
             CONF_SENSOR_TYPE: node.sensor_type,
             CONF_SERIAL: node.serial,
+            CONF_SENSOR_CLASS: node.sensor_class,
+            CONF_PRODUCT_TYPE: node.product_type,
             CONF_VIB_SETTING: node.vib_setting,
         }
         if self.source == "reauth":

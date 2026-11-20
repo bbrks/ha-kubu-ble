@@ -12,11 +12,20 @@
         "state": {
           "on": "mdi:shield-alert"
         }
+      },
+      "tilted": {
+        "default": "mdi:window-closed-variant",
+        "state": {
+          "on": "mdi:window-open-variant"
+        }
       }
     },
     "sensor": {
       "firmware": {
         "default": "mdi:chip"
+      },
+      "battery_type": {
+        "default": "mdi:battery-outline"
       },
       "vibration_sensitivity": {
         "default": "mdi:vibrate",
