@@ -339,6 +339,22 @@ async def test_cloud_key_not_hex(
     assert result["errors"] == {"base": "key_mismatch"}
 
 
+async def test_other_node_with_odd_type_does_not_block_setup(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    other = {**RETRO_PRO_NODE, "sNo": "112233445566", "type": "keypad"}
+    mock_cloud(aioclient_mock, RETRO_PRO_NODE, other)
+    result = await _start_discovery(hass)
+    with (
+        patch(PATCH_DISCOVERED, return_value=[]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], LOGIN
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
 async def test_confirm_falls_back_to_login_when_cached_key_fails(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:

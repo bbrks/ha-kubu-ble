@@ -96,12 +96,16 @@ def _node_from_json(data: dict[str, Any]) -> KubuCloudNode | None:
     dp_key = data.get("dpKey")
     if not mac or not dp_key:
         return None
+    try:
+        sensor_type = int(data.get("type") or 0)
+    except (TypeError, ValueError):
+        sensor_type = 0  # not a type we know; setup says so if it is picked
     return KubuCloudNode(
         mac=normalize_mac(mac),
         name=data.get("devAlias") or data.get("name") or mac,
         serial=data.get("serial"),
         dp_key=dp_key,
-        sensor_type=int(data.get("type") or 0),
+        sensor_type=sensor_type,
         sensor_class=data.get("class"),
         product_type=data.get("productType"),
         firmware=data.get("fwVer"),

@@ -162,3 +162,13 @@ async def test_login_without_id_token(
     cloud = KubuCloud(async_get_clientsession(hass))
     with pytest.raises(KubuCloudError, match="no idToken"):
         await cloud.login("me@example.com", "secret")
+
+
+async def test_node_with_odd_type_is_kept_as_unknown(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "type": "keypad"})
+    cloud = KubuCloud(async_get_clientsession(hass))
+    await cloud.login("me@example.com", "secret")
+    nodes = await cloud.get_ble_nodes()
+    assert nodes["94A081123456"].sensor_type == 0
