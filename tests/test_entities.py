@@ -211,6 +211,22 @@ def test_icons_match_translation_keys() -> None:
             assert all(v.startswith("mdi:") for v in icon.get("state", {}).values())
 
 
+async def test_new_values_logged_once(hass: HomeAssistant, caplog) -> None:
+    import logging
+
+    caplog.set_level(logging.INFO, logger="custom_components.kubu_ble")
+    await _setup(hass)
+    # Status low6 = 43 (0xEB): a "locked" variant not seen on real sensors yet.
+    for counter in (1, 2):
+        inject(hass, make_service_info(f"10010B29{counter:04X}2CA7FFEB000010FF042E"))
+        await hass.async_block_till_done()
+    assert caplog.text.count("new status 0x2b") == 1
+    # Unknown frame type 0x30.
+    inject(hass, make_service_info("30010B2900032CA7FFEA000010FF042E"))
+    await hass.async_block_till_done()
+    assert "new frame type 0x30" in caplog.text
+
+
 async def test_sensitivity_sensor_from_entry(hass: HomeAssistant) -> None:
     from custom_components.kubu_ble.const import CONF_VIB_SETTING
 
