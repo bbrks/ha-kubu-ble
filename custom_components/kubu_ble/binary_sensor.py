@@ -20,7 +20,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import KubuConfigEntry
 from .device import KubuUpdate
-from .entity import build_update
+from .entity import build_update, only_known_entities
 from .protocol import VIBRATION_FORCE, KubuModel, KubuState
 
 DESCRIPTIONS = {
@@ -147,7 +147,8 @@ async def async_setup_entry(
     processor = PassiveBluetoothDataProcessor(to_data_update)
     entry.async_on_unload(
         processor.async_add_entities_listener(
-            KubuBinarySensorEntity, async_add_entities
+            KubuBinarySensorEntity,
+            only_known_entities(descriptions, async_add_entities),
         )
     )
     entry.async_on_unload(

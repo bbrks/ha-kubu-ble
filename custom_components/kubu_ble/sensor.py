@@ -34,17 +34,9 @@ from .const import (
     SENSOR_TYPE_RETRO_PRO,
 )
 from .device import KubuUpdate
-from .entity import build_update
-from .protocol import KubuState
+from .entity import build_update, only_known_entities
 
 DESCRIPTIONS = {
-    # Locked / closed / open / tampered in one entity.
-    "state": SensorEntityDescription(
-        key="state",
-        translation_key="state",
-        device_class=SensorDeviceClass.ENUM,
-        options=[s.value for s in KubuState],
-    ),
     # Firmware version, sent in every frame.
     "firmware": SensorEntityDescription(
         key="firmware",
@@ -71,7 +63,6 @@ DESCRIPTIONS = {
 }
 
 VALUES = {
-    "state": lambda _u, r: r.state.value,
     "firmware": lambda _u, r: r.firmware,
     "battery_voltage": lambda _u, r: r.battery_mv,
     "signal_strength": lambda u, _r: u.rssi,
@@ -94,7 +85,9 @@ async def async_setup_entry(
     coordinator = entry.runtime_data.coordinator
     processor = PassiveBluetoothDataProcessor(update_to_bluetooth_data_update)
     entry.async_on_unload(
-        processor.async_add_entities_listener(KubuSensorEntity, async_add_entities)
+        processor.async_add_entities_listener(
+            KubuSensorEntity, only_known_entities(DESCRIPTIONS, async_add_entities)
+        )
     )
     entry.async_on_unload(
         coordinator.async_register_processor(processor, SensorEntityDescription)

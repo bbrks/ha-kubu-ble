@@ -9,8 +9,10 @@ from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataUpdate,
     PassiveBluetoothEntityKey,
 )
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
-from homeassistant.helpers.entity import EntityDescription
+from homeassistant.helpers.entity import Entity, EntityDescription
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import MANUFACTURER
 from .device import KubuUpdate
@@ -45,3 +47,29 @@ def build_update[T](
         entity_descriptions={keys[k]: d for k, d in descriptions.items()},
         entity_data={keys[k]: fn(update, reading) for k, fn in values.items()},
     )
+
+
+def only_known_entities(
+    descriptions: dict[str, EntityDescription],
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> Callable[[list[Entity]], None]:
+    """Wrap async_add_entities to match entities to this version's code.
+
+    HA restores each processor's saved entity descriptions on startup. Without
+    this, an entity removed in a later version would come back (frozen), and
+    a changed description would only apply after a second restart.
+    """
+
+    @callback
+    def _add(entities: list[Entity]) -> None:
+        known = []
+        for entity in entities:
+            key = entity.entity_key.key  # type: ignore[attr-defined]
+            if key in descriptions:
+                # Use the code's description, not a restored saved one,
+                # so changes (e.g. entity category) apply straight away.
+                entity.entity_description = descriptions[key]
+                known.append(entity)
+        async_add_entities(known)
+
+    return _add

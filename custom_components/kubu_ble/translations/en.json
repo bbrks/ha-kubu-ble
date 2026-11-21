@@ -63,17 +63,6 @@
           "high": "Default"
         }
       },
-      "state": {
-        "name": "State",
-        "state": {
-          "locked": "Locked",
-          "closed": "Closed",
-          "open": "Open",
-          "tilted": "Tilted",
-          "tampered": "Tampered",
-          "unknown": "Unknown"
-        }
-      },
       "firmware": {
         "name": "Firmware"
       },

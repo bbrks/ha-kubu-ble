@@ -24,7 +24,6 @@ DOOR = "binary_sensor.kuburetropro_34_56_door"
 TAMPER = "binary_sensor.kuburetropro_34_56_tamper"
 BATT_LOW = "binary_sensor.kuburetropro_34_56_battery"
 VOLTAGE = "sensor.kuburetropro_34_56_voltage"
-STATE = "sensor.kuburetropro_34_56_state"
 
 
 async def _setup(hass: HomeAssistant) -> MockConfigEntry:
@@ -54,7 +53,6 @@ async def test_states_follow_adverts(hass: HomeAssistant) -> None:
     assert hass.states.get(TAMPER).state == STATE_OFF
     assert hass.states.get(BATT_LOW).state == STATE_OFF
     assert float(hass.states.get(VOLTAGE).state) == 2.857
-    assert hass.states.get(STATE).state == "locked"
 
     inject(hass, make_service_info(OPEN))
     await hass.async_block_till_done()
@@ -100,6 +98,93 @@ async def test_repeated_bad_payloads_start_reauth(hass: HomeAssistant) -> None:
     assert flows[0]["context"]["entry_id"] == entry.entry_id
 
 
+async def test_no_state_sensor(hass: HomeAssistant) -> None:
+    """Lock + door cover the state; there is no separate state sensor."""
+    await _setup(hass)
+    inject(hass, make_service_info(LOCKED))
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.kuburetropro_34_56_state") is None
+
+
+def test_only_known_entities_filters_restored_keys() -> None:
+    """Restored data for a removed key must not create an entity."""
+    from types import SimpleNamespace
+
+    from custom_components.kubu_ble.entity import only_known_entities
+
+    added: list = []
+    add = only_known_entities({"lock": object()}, added.extend)
+    lock = SimpleNamespace(entity_key=SimpleNamespace(key="lock"))
+    state = SimpleNamespace(entity_key=SimpleNamespace(key="state"))
+    add([lock, state])
+    assert added == [lock]
+
+
+VIBRATION = "binary_sensor.kuburetropro_34_56_vibration"
+# LOCKED frame with byte 10 set: 0x10 activity, 0x20 security.
+VIB_ACTIVITY = "10010B2901B12CA7FFEA100010FF042E"
+VIB_SECURITY = "10010B2901B12CA8FFEA200010FF042E"
+# LOCKED with the next counter: the sensor never sends a payload twice.
+LOCKED_NEXT = "10010B2901B22CA7FFEA000010FF042E"
+
+
+async def test_vibration_and_tamper_are_primary(hass: HomeAssistant) -> None:
+    from homeassistant.helpers import entity_registry as er
+
+    await _setup(hass)
+    inject(hass, make_service_info(LOCKED))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_OFF
+
+    inject(hass, make_service_info(VIB_ACTIVITY))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_ON
+
+    inject(hass, make_service_info(LOCKED_NEXT))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_OFF
+
+    inject(hass, make_service_info(VIB_SECURITY))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_ON
+    assert hass.states.get(LOCK).state == STATE_OFF  # still locked
+
+    registry = er.async_get(hass)
+    for entity_id in (VIBRATION, TAMPER):
+        assert registry.async_get(entity_id).entity_category is None
+
+
+def test_current_description_replaces_restored_one() -> None:
+    from types import SimpleNamespace
+
+    from custom_components.kubu_ble.entity import only_known_entities
+
+    new_desc = object()
+    added: list = []
+    add = only_known_entities({"tamper": new_desc}, added.extend)
+    restored = SimpleNamespace(
+        entity_key=SimpleNamespace(key="tamper"), entity_description="old"
+    )
+    add([restored])
+    assert added == [restored]
+    assert restored.entity_description is new_desc
+
+
+FORCE = "binary_sensor.kuburetropro_34_56_excessive_force"
+
+
+async def test_excessive_force_only_on_strong_hit(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    inject(hass, make_service_info(VIB_ACTIVITY))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_ON
+    assert hass.states.get(FORCE).state == STATE_OFF
+    inject(hass, make_service_info(VIB_SECURITY))
+    await hass.async_block_till_done()
+    assert hass.states.get(VIBRATION).state == STATE_ON
+    assert hass.states.get(FORCE).state == STATE_ON
+
+
 async def test_lock_has_plain_lock_wording(hass: HomeAssistant) -> None:
     """Closed-but-unlocked really is unlocked (door opens from outside)."""
     from homeassistant.helpers import entity_registry as er
@@ -138,77 +223,6 @@ async def test_battery_low_uses_hysteresis(hass: HomeAssistant) -> None:
         inject(hass, make_service_info(frame))
         await hass.async_block_till_done()
         assert hass.states.get(BATT_LOW).state == expected, mv
-
-
-async def test_no_battery_level_entity(hass: HomeAssistant) -> None:
-    await _setup(hass)
-    inject(hass, make_service_info(LOCKED))
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.kuburetropro_34_56_battery_level") is None
-
-
-VIBRATION = "binary_sensor.kuburetropro_34_56_vibration"
-# LOCKED frame with byte 10 set: 0x10 activity, 0x20 security.
-VIB_ACTIVITY = "10010B2901B12CA7FFEA100010FF042E"
-VIB_SECURITY = "10010B2901B12CA8FFEA200010FF042E"
-# LOCKED with the next counter: the sensor never sends a payload twice.
-LOCKED_NEXT = "10010B2901B22CA7FFEA000010FF042E"
-
-
-async def test_vibration_and_tamper_are_primary(hass: HomeAssistant) -> None:
-    from homeassistant.helpers import entity_registry as er
-
-    await _setup(hass)
-    inject(hass, make_service_info(LOCKED))
-    await hass.async_block_till_done()
-    assert hass.states.get(VIBRATION).state == STATE_OFF
-
-    inject(hass, make_service_info(VIB_ACTIVITY))
-    await hass.async_block_till_done()
-    assert hass.states.get(VIBRATION).state == STATE_ON
-
-    inject(hass, make_service_info(LOCKED_NEXT))
-    await hass.async_block_till_done()
-    assert hass.states.get(VIBRATION).state == STATE_OFF
-
-    inject(hass, make_service_info(VIB_SECURITY))
-    await hass.async_block_till_done()
-    assert hass.states.get(VIBRATION).state == STATE_ON
-    assert hass.states.get(LOCK).state == STATE_OFF  # still locked
-
-    registry = er.async_get(hass)
-    for entity_id in (VIBRATION, TAMPER):
-        assert registry.async_get(entity_id).entity_category is None
-
-
-FORCE = "binary_sensor.kuburetropro_34_56_excessive_force"
-
-
-async def test_excessive_force_only_on_strong_hit(hass: HomeAssistant) -> None:
-    await _setup(hass)
-    inject(hass, make_service_info(VIB_ACTIVITY))
-    await hass.async_block_till_done()
-    assert hass.states.get(VIBRATION).state == STATE_ON
-    assert hass.states.get(FORCE).state == STATE_OFF
-    inject(hass, make_service_info(VIB_SECURITY))
-    await hass.async_block_till_done()
-    assert hass.states.get(VIBRATION).state == STATE_ON
-    assert hass.states.get(FORCE).state == STATE_ON
-
-
-def test_icons_match_translation_keys() -> None:
-    """Every icon entry needs a translation key, and is valid for hassfest."""
-    import json
-    import pathlib
-
-    base = pathlib.Path(__file__).parents[1] / "custom_components" / "kubu_ble"
-    icons = json.loads((base / "icons.json").read_text())["entity"]
-    names = json.loads((base / "translations" / "en.json").read_text())["entity"]
-    for platform, entries in icons.items():
-        for key, icon in entries.items():
-            assert key in names[platform], f"{platform}.{key} has no translation"
-            assert icon["default"].startswith("mdi:")
-            assert all(v.startswith("mdi:") for v in icon.get("state", {}).values())
 
 
 async def test_new_values_logged_once(hass: HomeAssistant, caplog) -> None:
@@ -278,6 +292,28 @@ async def test_sensitivity_off_is_valid(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert hass.states.get(_sensitivity_entity_id(hass)).state == "off"
+
+
+def test_icons_match_translation_keys() -> None:
+    """Every icon entry needs a translation key, and is valid for hassfest."""
+    import json
+    import pathlib
+
+    base = pathlib.Path(__file__).parents[1] / "custom_components" / "kubu_ble"
+    icons = json.loads((base / "icons.json").read_text())["entity"]
+    names = json.loads((base / "translations" / "en.json").read_text())["entity"]
+    for platform, entries in icons.items():
+        for key, icon in entries.items():
+            assert key in names[platform], f"{platform}.{key} has no translation"
+            assert icon["default"].startswith("mdi:")
+            assert all(v.startswith("mdi:") for v in icon.get("state", {}).values())
+
+
+async def test_no_battery_level_entity(hass: HomeAssistant) -> None:
+    await _setup(hass)
+    inject(hass, make_service_info(LOCKED))
+    await hass.async_block_till_done()
+    assert hass.states.get("sensor.kuburetropro_34_56_battery_level") is None
 
 
 def _frame(status_hex: str) -> str:
