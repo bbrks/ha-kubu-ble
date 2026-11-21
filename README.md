@@ -1,5 +1,7 @@
 # Kubu BLE for Home Assistant
 
+[![Install from Marketplace](https://img.shields.io/badge/Marketplace-install-18BCF2?logo=homeassistant&logoColor=white)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=bbrks&repository=ha-kubu-ble&category=integration) [![Latest release](https://img.shields.io/github/v/release/bbrks/ha-kubu-ble)](https://github.com/bbrks/ha-kubu-ble/releases/latest) [![Validate](https://github.com/bbrks/ha-kubu-ble/actions/workflows/validate.yaml/badge.svg)](https://github.com/bbrks/ha-kubu-ble/actions/workflows/validate.yaml) [![hassfest](https://github.com/bbrks/ha-kubu-ble/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/bbrks/ha-kubu-ble/actions/workflows/hassfest.yaml) [![Tests](https://github.com/bbrks/ha-kubu-ble/actions/workflows/tests.yaml/badge.svg)](https://github.com/bbrks/ha-kubu-ble/actions/workflows/tests.yaml)
+
 This Home Assistant integration provides support for local/offline Kubu Bluetooth door and window sensors.
 It uses Home Assistant's own Bluetooth adapter (or an ESPHome Bluetooth proxy). You don't need a Kubu hub.
 
