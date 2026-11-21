@@ -188,7 +188,10 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
                 {CONF_EMAIL: user_input[CONF_EMAIL]} if user_input else {},
             ),
             errors=errors,
-            description_placeholders={"name": self._name or self._address},
+            description_placeholders={
+                "name": self._name or self._address,
+                "issues_url": ISSUES_URL,
+            },
         )
 
     async def async_step_confirm(

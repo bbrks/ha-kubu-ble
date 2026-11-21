@@ -122,6 +122,8 @@ async def test_cloud_key_does_not_match_live_data(
             result["flow_id"], LOGIN
         )
     assert result["errors"] == {"base": "key_mismatch"}
+    # hassfest does not allow URLs in strings; the error text uses this.
+    assert result["description_placeholders"]["issues_url"].startswith("https://")
 
 
 async def test_second_sensor_uses_cached_keys(

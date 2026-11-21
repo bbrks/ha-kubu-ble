@@ -28,7 +28,7 @@
       "invalid_auth": "Wrong email or password. Accounts that sign in with Google are not supported.",
       "cannot_connect": "Could not reach the Kubu cloud. Try again later.",
       "not_in_account": "This sensor is not in your Kubu account. Set it up in the Kubu app first.",
-      "key_mismatch": "The key from your Kubu account does not decode this sensor's data. Please open an issue at https://github.com/bbrks/ha-kubu-ble/issues.",
+      "key_mismatch": "The key from your Kubu account does not decode this sensor's data. Please open an issue at {issues_url}.",
       "too_many_attempts": "Too many failed sign-ins. Kubu has locked sign-in for 5 minutes; wait and try again.",
       "email_not_verified": "Your email is not verified yet. Verify it from the Kubu app, then try again."
     },
