@@ -21,7 +21,9 @@ Timing:
 
 The scan response repeats the same payload until the next frame (within a
 burst, and between heartbeats). Treat a frame as new only when the payload
-changes; bytes 4-5 are a frame counter.
+changes; bytes 4-5 are a frame counter. A payload is never sent again
+later, so with more than one receiver (where one may hand back an older
+payload) remember the recent payloads, not just the last one.
 
 A passive scanner observes the burst, so it can tell something changed, and briefly switch to active scanning to read the encrypted contents.
 

@@ -29,6 +29,12 @@ _LOGGER = logging.getLogger(__name__)
 # decoded. Other models are not verified, so every new status is logged.
 SEEN_STATUS_LOW6_TYPE8 = frozenset({42, 58, 63})
 
+# How many recent payloads to remember. With more than one adapter, HA can
+# hand back an adapter's older payload (it keeps each adapter's last
+# manufacturer data), so a payload is only new if it was not seen lately.
+# The sensor never repeats a payload, and 64 frames is about an hour.
+RECENT_PAYLOADS = 64
+
 
 @dataclass(frozen=True, slots=True)
 class KubuUpdate:
@@ -81,7 +87,7 @@ class KubuDeviceData:
         self._on_bad_key = on_bad_key
         self._bad_key_threshold = bad_key_threshold
         self._bad_count = 0
-        self._last_payload: bytes | None = None
+        self._recent_payloads: deque[bytes] = deque(maxlen=RECENT_PAYLOADS)
         self._last_reading: KubuReading | None = None
         # (unix time, decrypted frame or None if it did not decode)
         self.recent_frames: deque[tuple[float, KubuReading | None]] = deque(maxlen=30)
@@ -103,8 +109,8 @@ class KubuDeviceData:
         just return the last good reading.
         """
         payload = service_info.manufacturer_data.get(COMPANY_ID)
-        if payload is not None and payload != self._last_payload:
-            self._last_payload = payload
+        if payload is not None and payload not in self._recent_payloads:
+            self._recent_payloads.append(payload)
             reading = decode(
                 payload, self._key, self._sensor_type, self._sensor_class, self._decoder
             )

@@ -379,3 +379,28 @@ async def test_door_sensor_class(hass: HomeAssistant) -> None:
     inject(hass, make_service_info(_frame("FF00")))  # unknown value
     await hass.async_block_till_done()
     assert hass.states.get(TAMPER).state == "unknown"
+
+
+def _from_source(source: str, info):
+    info.source = source
+    return info
+
+
+async def test_old_payload_from_other_adapter_is_ignored(hass: HomeAssistant) -> None:
+    """Two adapters: HA can hand back one adapter's older payload.
+
+    habluetooth keeps each adapter's last manufacturer data. A passive
+    adapter that hears a name-only advert still carries the payload from
+    its last active window, which may be older than what HA already showed.
+    """
+    await _setup(hass)
+    inject(hass, _from_source("hci0", make_service_info(LOCKED)))
+    inject(hass, _from_source("proxy", make_service_info(OPEN)))
+    await hass.async_block_till_done()
+    assert hass.states.get(DOOR).state == STATE_ON
+
+    stale = make_service_info(LOCKED, raw=make_service_info(None).raw)
+    inject(hass, _from_source("hci0", stale))
+    await hass.async_block_till_done()
+    assert hass.states.get(DOOR).state == STATE_ON
+    assert hass.states.get(LOCK).state == STATE_ON
