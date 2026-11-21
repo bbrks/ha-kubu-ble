@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
@@ -81,6 +83,9 @@ class KubuDeviceData:
         self._bad_count = 0
         self._last_payload: bytes | None = None
         self._last_reading: KubuReading | None = None
+        # (unix time, decrypted frame or None if it did not decode)
+        self.recent_frames: deque[tuple[float, KubuReading | None]] = deque(maxlen=30)
+        self.bad_frames = 0
         self.missed_frames = 0
         self.sensor_type = sensor_type
         self.battery_status = "unknown"
@@ -103,7 +108,9 @@ class KubuDeviceData:
             reading = decode(
                 payload, self._key, self._sensor_type, self._sensor_class, self._decoder
             )
+            self.recent_frames.append((time.time(), reading))
             if reading is None:
+                self.bad_frames += 1
                 self._bad_count += 1
                 if self._bad_count == 1:
                     _LOGGER.warning(
