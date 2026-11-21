@@ -1,0 +1,22 @@
+name: Release check
+
+# The Marketplace shows the release tag as the version, and refuses an
+# install whose manifest version it cannot load. Keep them identical.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  version-matches-tag:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v4"
+      - name: Manifest version equals release tag
+        run: |
+          manifest=$(python3 -c 'import json;print(json.load(open("custom_components/kubu_ble/manifest.json"))["version"])')
+          tag="${GITHUB_REF_NAME}"
+          echo "manifest=$manifest tag=$tag"
+          test "$manifest" = "$tag"
