@@ -12,7 +12,7 @@
  *   device_id: <a Kubu sensor device>
  *   compact: false
  *
- * The pure functions are exported so `node --test tests/js/` can test them.
+ * The pure functions are exported so `node --test tests/js/*.test.mjs` can test them.
  */
 
 export const DOMAIN = "kubu_ble";

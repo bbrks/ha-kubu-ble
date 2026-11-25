@@ -22,4 +22,4 @@ jobs:
       - name: Test
         run: python -m pytest -q
       - name: Test the dashboard card
-        run: node --check custom_components/kubu_ble/frontend/kubu-ble-card.js && node --test tests/js/
+        run: node --check custom_components/kubu_ble/frontend/kubu-ble-card.js && node --test tests/js/*.test.mjs

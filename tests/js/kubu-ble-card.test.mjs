@@ -1,4 +1,4 @@
-// Tests for the card's pure logic. Run: node --test tests/js/
+// Tests for the card's pure logic. Run: node --test tests/js/*.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
