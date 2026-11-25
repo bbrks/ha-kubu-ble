@@ -1,6 +1,10 @@
 # Kubu BLE for Home Assistant
 
+<!-- ha-marketplace:exclude-start -->
+
 [![Install from Marketplace](https://img.shields.io/badge/Marketplace-install-18BCF2?logo=homeassistant&logoColor=white)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=bbrks&repository=ha-kubu-ble&category=integration) [![Latest release](https://img.shields.io/github/v/release/bbrks/ha-kubu-ble)](https://github.com/bbrks/ha-kubu-ble/releases/latest) [![Validate](https://github.com/bbrks/ha-kubu-ble/actions/workflows/validate.yaml/badge.svg)](https://github.com/bbrks/ha-kubu-ble/actions/workflows/validate.yaml) [![hassfest](https://github.com/bbrks/ha-kubu-ble/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/bbrks/ha-kubu-ble/actions/workflows/hassfest.yaml) [![Tests](https://github.com/bbrks/ha-kubu-ble/actions/workflows/tests.yaml/badge.svg)](https://github.com/bbrks/ha-kubu-ble/actions/workflows/tests.yaml)
+
+<!-- ha-marketplace:exclude-end -->
 
 This Home Assistant integration provides support for local/offline Kubu Bluetooth door and window sensors.
 It uses Home Assistant's own Bluetooth adapter (or an ESPHome Bluetooth proxy). You don't need a Kubu hub.
@@ -30,7 +34,7 @@ All Kubu Bluetooth sensors use the same radio format and the integration attempt
 | "Works with Kubu" window (newer calibration) | 40, 41 | open, closed, locked | No |
 | "Works with Kubu" tilt & turn window | 9, 10 | open, tilted, locked, tampered | No |
 
-Their states are decoded the same way the Android app does it (see [docs/PROTOCOL.md](docs/PROTOCOL.md)),
+Their states are decoded the same way the Android app does it (see [docs/PROTOCOL.md](https://github.com/bbrks/ha-kubu-ble/blob/main/docs/PROTOCOL.md)),
 but none of them have been tried on a real sensor. The integration setup tells you when a detected sensor is untested.
 
 Let me know how it goes, even if it works fine. I can flag it as tested.
@@ -85,7 +89,9 @@ The file contains the sensor type, firmware and recent decrypted frames for anal
 The key, Bluetooth address and serial number are removed for privacy reasons.
 
 ### Report new/unknown sensor type
-If setup says your sensor isn't known at all, run `dev/kubu_cloud_check.py` (see [dev/README.md](dev/README.md)) and include the `type=`, `class=` and `product=` values it prints, but avoid sharing the key.
+If setup says your sensor isn't known at all, run `dev/kubu_cloud_check.py` (see [dev/README.md](https://github.com/bbrks/ha-kubu-ble/blob/main/dev/README.md)) and include the `type=`, `class=` and `product=` values it prints, but avoid sharing the key.
+
+<!-- ha-marketplace:exclude-start -->
 
 ## Development
 
@@ -98,6 +104,8 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 The reverse-engineering tools are described in [dev/README.md](dev/README.md).
 
 The bluetooth protocol is described in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+<!-- ha-marketplace:exclude-end -->
 
 ## License
 

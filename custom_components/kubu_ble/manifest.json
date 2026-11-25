@@ -15,6 +15,10 @@
       "connectable": false
     }
   ],
+  "categories": [
+    "sensors.door_window",
+    "security_safety.locks_access"
+  ],
   "codeowners": [
     "@bbrks"
   ],
