@@ -114,6 +114,36 @@ If a sensor's key stops working, Home Assistant fetches the keys again from your
 Before 1.1.0, each sensor was its own entry, and the integration never went back to the Kubu cloud. Those entries still work.
 You will see a repair notice: sign in once, and your sensors move into one account entry. Devices, entity IDs, names and history stay the same.
 
+## Dashboard card
+
+The integration comes with a **Kubu sensor** card. It loads by itself: there is no resource to add.
+Edit a dashboard, choose *Add card*, and search for *Kubu sensor*, or use YAML:
+
+```yaml
+type: custom:kubu-ble-card
+device_id: <your sensor's device>
+```
+
+It shows the sensor's state the way the Kubu app does ("Locked", "Unlocked, closed", "Open", "Tamper alert", "Out of range"), with:
+
+- an alert banner for tamper, vibration and excessive force,
+- battery, signal and firmware,
+- recent activity (from Home Assistant's history),
+- the model and its settings.
+
+Tap it, or any part of it, for more details.
+
+| Option | Default | What it does |
+|---|---|---|
+| `device_id` | (required) | The Kubu sensor to show. |
+| `name` | the device name | Show another name. |
+| `compact` | `false` | One line, like a tile. Good for many sensors. |
+| `show_battery` | `true` | Battery, signal and firmware. |
+| `show_alerts` | `true` | Tamper, vibration and excessive force banner. |
+| `show_activity` | `true` | Recent activity. |
+| `show_details` | `true` | Model, vibration sensitivity and battery type. |
+| `activity_hours` | `24` | How far back recent activity looks. |
+
 ## Problems and reports
 
 ### Report sensor state bugs/misreporting

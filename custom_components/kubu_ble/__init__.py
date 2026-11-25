@@ -23,9 +23,11 @@ from homeassistant.components.bluetooth.passive_update_processor import (
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState, ConfigSubentry
 from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.typing import ConfigType
 
 from .account import (
     REASON_BAD_KEY,
@@ -37,6 +39,7 @@ from .account import (
     is_offline,
     sensor_subentries,
 )
+from .card import async_register_card
 from .cloud import normalize_mac
 from .const import (
     ACTIVE_SCAN_DURATION,
@@ -169,6 +172,15 @@ def _async_on_bad_key(hass: HomeAssistant, entry: KubuConfigEntry) -> None:
     entry.async_create_background_task(
         hass, _refresh_then_ask(), f"{DOMAIN} refresh after bad key"
     )
+
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Add the Kubu sensor dashboard card."""
+    await async_register_card(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> bool:

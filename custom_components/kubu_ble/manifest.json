@@ -1,6 +1,10 @@
 {
   "domain": "kubu_ble",
   "name": "Kubu BLE",
+  "after_dependencies": [
+    "frontend",
+    "http"
+  ],
   "bluetooth": [
     {
       "manufacturer_id": 3535,
