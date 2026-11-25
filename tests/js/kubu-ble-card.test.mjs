@@ -5,6 +5,7 @@ import { test } from "node:test";
 import {
   activityEntities,
   activityItems,
+  configChange,
   findEntities,
   firstSensorDevice,
   formatWhen,
@@ -13,6 +14,7 @@ import {
   overallState,
   realChanges,
   relativeTime,
+  resolveConfig,
   timeOptions,
 } from "../../custom_components/kubu_ble/frontend/kubu-ble-card.js";
 
@@ -170,6 +172,36 @@ test("activityItems merges, labels and sorts newest first", () => {
   );
 });
 
+test("activityItems gives each change an icon and a colour", () => {
+  const icons = (hass, history) =>
+    activityItems(history, findEntities(hass, DEVICE)).map((i) => [i.label, i.icon, i.tone]);
+  assert.deepEqual(
+    icons(fakeHass({}), {
+      "binary_sensor.s_lock": [{ s: "on", lu: 1 }, { s: "off", lu: 4 }],
+      "binary_sensor.s_door": [{ s: "on", lu: 2 }, { s: "off", lu: 3 }],
+      "binary_sensor.s_tamper": [{ s: "on", lu: 5 }],
+    }),
+    [
+      ["Tamper alert", "mdi:shield-alert", "alert"],
+      ["Locked", "mdi:lock", "ok"],
+      ["Closed", "mdi:door-closed", null],
+      ["Opened", "mdi:door-open", "warn"],
+      ["Unlocked", "mdi:lock-open-variant", "warn"],
+    ],
+  );
+  assert.deepEqual(
+    icons(fakeHass({}, { window: true }), {
+      "binary_sensor.s_window": [{ s: "on", lu: 1 }, { s: "off", lu: 3 }],
+      "binary_sensor.s_tilted": [{ s: "on", lu: 2 }],
+    }),
+    [
+      ["Closed", "mdi:window-closed-variant", null],
+      ["Tilted", "mdi:window-open-variant", "warn"],
+      ["Opened", "mdi:window-open-variant", "warn"],
+    ],
+  );
+});
+
 test("activityItems keeps only the newest five", () => {
   const entities = findEntities(fakeHass({}), DEVICE);
   const changes = Array.from({ length: 8 }, (_, i) => ({ s: i % 2 ? "on" : "off", lu: i }));
@@ -286,5 +318,63 @@ test("timeOptions follows the user's HA profile", () => {
   assert.deepEqual(
     timeOptions({ locale: { language: "en", time_format: "language", time_zone: "local" } }),
     { locale: "en", hour12: undefined, timeZone: undefined },
+  );
+});
+
+const PARTS = [
+  "show_icon",
+  "show_name",
+  "show_status",
+  "show_since",
+  "show_alerts",
+  "show_battery",
+  "show_signal",
+  "show_firmware",
+  "show_activity",
+  "show_details",
+];
+
+test("resolveConfig: every part is on by default", () => {
+  const config = resolveConfig({ device_id: DEVICE });
+  for (const part of PARTS) assert.equal(config[part], true, part);
+  assert.equal(config.compact, false);
+  assert.equal(config.activity_hours, 24);
+});
+
+test("resolveConfig: compact shows one line unless parts are turned on", () => {
+  const off = ["show_since", "show_alerts", "show_signal", "show_firmware", "show_activity", "show_details"];
+  const compact = resolveConfig({ device_id: DEVICE, compact: true });
+  for (const part of PARTS) assert.equal(compact[part], !off.includes(part), part);
+  assert.equal(resolveConfig({ device_id: DEVICE, compact: true, show_activity: true }).show_activity, true);
+  assert.equal(resolveConfig({ device_id: DEVICE, show_firmware: false }).show_firmware, false);
+});
+
+test("configChange keeps only what differs from the defaults", () => {
+  const old = { type: "custom:kubu-ble-card", device_id: DEVICE };
+  const shown = resolveConfig(old);
+  assert.deepEqual(configChange(old, shown, { ...shown, show_firmware: false }), {
+    ...old,
+    show_firmware: false,
+  });
+  // Turning it back on removes it again.
+  const hidden = { ...old, show_firmware: false };
+  assert.deepEqual(configChange(hidden, resolveConfig(hidden), resolveConfig(old)), old);
+  // A cleared name goes away.
+  const named = { ...old, name: "Back door" };
+  assert.deepEqual(configChange(named, resolveConfig(named), { ...resolveConfig(named), name: "" }), old);
+});
+
+test("configChange: switching to compact picks up the compact defaults", () => {
+  const old = { type: "custom:kubu-ble-card", device_id: DEVICE };
+  const shown = resolveConfig(old);
+  const next = configChange(old, shown, { ...shown, compact: true });
+  assert.deepEqual(next, { ...old, compact: true });
+  assert.equal(resolveConfig(next).show_activity, false);
+  // A part the user turned on by hand stays on.
+  const withActivity = { ...old, compact: true, show_activity: true };
+  const shownCompact = resolveConfig(withActivity);
+  assert.deepEqual(
+    configChange(withActivity, shownCompact, { ...shownCompact, compact: false }),
+    old,
   );
 });

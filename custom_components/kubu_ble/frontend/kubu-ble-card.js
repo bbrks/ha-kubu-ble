@@ -22,12 +22,56 @@ const MAX_ACTIVITY = 5;
 
 export const DEFAULTS = {
   compact: false,
-  show_battery: true,
+  show_icon: true,
+  show_name: true,
+  show_status: true,
+  show_since: true,
   show_alerts: true,
+  show_battery: true,
+  show_signal: true,
+  show_firmware: true,
   show_activity: true,
   show_details: true,
   activity_hours: 24,
 };
+
+// The compact layout is one line: icon, name, status, and the battery only
+// when it is low. Other parts can still be turned on.
+const COMPACT_DEFAULTS = {
+  ...DEFAULTS,
+  compact: true,
+  show_since: false,
+  show_alerts: false,
+  show_signal: false,
+  show_firmware: false,
+  show_activity: false,
+  show_details: false,
+};
+
+/** The card's config with the defaults for its layout filled in. */
+export function resolveConfig(config) {
+  return { ...(config?.compact ? COMPACT_DEFAULTS : DEFAULTS), ...config };
+}
+
+/**
+ * The editor's new config: the old config plus what the user just changed
+ * (newData vs shownData), without options that match the layout's defaults.
+ * So switching to compact picks up the compact defaults, and the YAML stays short.
+ */
+export function configChange(oldConfig, shownData, newData) {
+  const next = { ...oldConfig };
+  for (const [key, value] of Object.entries(newData)) {
+    if (value !== shownData[key]) next[key] = value;
+  }
+  // `compact` itself is only dropped when false.
+  const defaults = { ...(next.compact ? COMPACT_DEFAULTS : DEFAULTS), compact: false };
+  for (const [key, value] of Object.entries(next)) {
+    if (value === "" || value === undefined || value === null || defaults[key] === value) {
+      delete next[key];
+    }
+  }
+  return next;
+}
 
 const TONES = {
   ok: "var(--success-color, #43a047)",
@@ -121,12 +165,23 @@ export function overallState(hass, entities) {
   return { status: "Closed", detail: null, tone: "ok", icon: closedIcon };
 }
 
+// What each state change shows in the activity list: [label, icon, tone].
+// A null tone shows the icon in the normal muted colour.
 const ACTIVITY_LABELS = {
-  lock: { on: "Unlocked", off: "Locked" },
-  door: { on: "Opened", off: "Closed" },
-  window: { on: "Opened", off: "Closed" },
-  tilted: { on: "Tilted" },
-  tamper: { on: "Tamper alert" },
+  lock: {
+    on: ["Unlocked", "mdi:lock-open-variant", "warn"],
+    off: ["Locked", "mdi:lock", "ok"],
+  },
+  door: {
+    on: ["Opened", "mdi:door-open", "warn"],
+    off: ["Closed", "mdi:door-closed", null],
+  },
+  window: {
+    on: ["Opened", "mdi:window-open-variant", "warn"],
+    off: ["Closed", "mdi:window-closed-variant", null],
+  },
+  tilted: { on: ["Tilted", "mdi:window-open-variant", "warn"] },
+  tamper: { on: ["Tamper alert", "mdi:shield-alert", "alert"] },
 };
 
 /** The roles whose changes make up the activity list. */
@@ -159,15 +214,17 @@ export function realChanges(changes) {
 
 /**
  * Turn a minimal-response history answer ({entity_id: [{s, lu, lc}]}) into
- * the newest few labelled changes: [{label, time (ms), entityId}].
+ * the newest few labelled changes: [{label, icon, tone, time (ms), entityId}].
  */
 export function activityItems(history, entities, limit = MAX_ACTIVITY) {
   const items = [];
   for (const [role, labels] of Object.entries(ACTIVITY_LABELS)) {
     const entityId = entities[role];
     for (const change of realChanges(entityId && history?.[entityId])) {
-      const label = labels[change.state];
-      if (label) items.push({ label, time: change.time, entityId });
+      const shown = labels[change.state];
+      if (!shown) continue;
+      const [label, icon, tone] = shown;
+      items.push({ label, icon, tone, time: change.time, entityId });
     }
   }
   items.sort((a, b) => b.time - a.time);
@@ -303,10 +360,15 @@ const STYLE = `
   .section-title { font-size: 0.85em; color: var(--secondary-text-color); margin-bottom: 4px; }
   .activity { list-style: none; margin: 0; padding: 0; }
   .activity li {
-    display: flex; justify-content: space-between; gap: 8px;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
     padding: 3px 0; border-bottom: 1px solid var(--divider-color, rgba(127, 127, 127, 0.2));
   }
   .activity li:last-child { border-bottom: none; }
+  .activity .what { display: inline-flex; align-items: center; gap: 8px; }
+  .activity .what ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+  .activity .what ha-icon.ok { color: ${TONES.ok}; }
+  .activity .what ha-icon.warn { color: ${TONES.warn}; }
+  .activity .what ha-icon.alert { color: ${TONES.alert}; }
   .activity .when { color: var(--secondary-text-color); font-size: 0.9em; white-space: nowrap; }
   .details { margin-top: 12px; font-size: 0.85em; color: var(--secondary-text-color); }
   .warning { color: var(--error-color, #db4437); }
@@ -325,7 +387,7 @@ class KubuBleCard extends Base {
     if (!config || !config.device_id) {
       throw new Error("Choose a Kubu sensor (device_id).");
     }
-    this._config = { ...DEFAULTS, ...config };
+    this._config = resolveConfig(config);
     this._renderKey = null;
     this._historyKey = null;
     this._render();
@@ -337,13 +399,30 @@ class KubuBleCard extends Base {
     this._maybeFetchHistory();
   }
 
+  /** Is the compact card just its one line? */
+  _oneLine() {
+    const c = this._config;
+    return Boolean(
+      c?.compact &&
+        !c.show_since &&
+        !c.show_alerts &&
+        !c.show_signal &&
+        !c.show_firmware &&
+        !c.show_activity &&
+        !c.show_details,
+    );
+  }
+
   getCardSize() {
-    return this._config?.compact ? 1 : 4;
+    if (this._oneLine()) return 1;
+    if (this._config?.show_activity) return this._config.compact ? 3 : 4;
+    return 2;
   }
 
   getGridOptions() {
+    if (this._oneLine()) return { columns: 6, min_columns: 4, rows: 1, min_rows: 1 };
     return this._config?.compact
-      ? { columns: 6, min_columns: 4, rows: 1, min_rows: 1 }
+      ? { columns: 6, min_columns: 4 }
       : { columns: 12, min_columns: 6 };
   }
 
@@ -362,7 +441,8 @@ class KubuBleCard extends Base {
 
   async _maybeFetchHistory() {
     const config = this._config;
-    if (!this._hass || !config || config.compact || !config.show_activity) return;
+    // The history gives the recent activity and the real "since" time.
+    if (!this._hass || !config || !(config.show_activity || config.show_since)) return;
     const ids = activityEntities(this._entities());
     if (!ids.length) return;
     const key = ids.map((id) => this._hass.states[id]?.last_changed).join("|") +
@@ -437,34 +517,35 @@ class KubuBleCard extends Base {
     const status = overall.detail
       ? `${escape(overall.status)}<span class="detail">, ${escape(overall.detail)}</span>`
       : escape(overall.status);
-    const badge = `<div class="badge"><ha-icon icon="${overall.icon}"></ha-icon></div>`;
-
-    let body;
-    if (config.compact) {
-      body = `
-        <div class="head clickable" data-entity="${escape(main)}">
-          ${badge}
-          <div class="text">
-            <div class="name">${escape(name)}</div>
-            <div class="status">${status}</div>
-          </div>
-          <div class="chips">${this._batteryChip(entities, true)}</div>
-        </div>`;
-    } else {
-      body = `
-        <div class="head clickable" data-entity="${escape(main)}">
-          ${badge}
-          <div class="text">
-            <div class="name">${escape(name)}</div>
-            <div class="status">${status}</div>
-            <div class="since">${escape(since)}</div>
-          </div>
-        </div>
-        ${config.show_alerts ? this._banner(entities) : ""}
-        ${config.show_battery ? this._chips(entities) : ""}
-        ${config.show_activity ? this._activity(entities, locale) : ""}
-        ${config.show_details ? this._details(entities, device) : ""}`;
-    }
+    const badge = config.show_icon
+      ? `<div class="badge"><ha-icon icon="${overall.icon}"></ha-icon></div>`
+      : "";
+    const text = [
+      config.show_name ? `<div class="name">${escape(name)}</div>` : "",
+      config.show_status ? `<div class="status">${status}</div>` : "",
+      config.show_since && since ? `<div class="since">${escape(since)}</div>` : "",
+    ].join("");
+    // Compact: the battery sits in the line, and only when it is low.
+    const lowBattery =
+      config.compact && config.show_battery ? this._batteryChip(entities, true) : "";
+    const head =
+      badge || text || lowBattery
+        ? `<div class="head clickable" data-entity="${escape(main)}">
+            ${badge}
+            ${text ? `<div class="text">${text}</div>` : ""}
+            ${lowBattery ? `<div class="chips">${lowBattery}</div>` : ""}
+          </div>`
+        : "";
+    const body = `
+      ${head}
+      ${config.show_alerts ? this._banner(entities) : ""}
+      ${this._chips(entities, {
+        battery: config.show_battery && !config.compact,
+        signal: config.show_signal,
+        firmware: config.show_firmware,
+      })}
+      ${config.show_activity ? this._activity(entities, locale) : ""}
+      ${config.show_details ? this._details(entities, device) : ""}`;
 
     this.shadowRoot.innerHTML = `
       <style>${STYLE}</style>
@@ -506,14 +587,14 @@ class KubuBleCard extends Base {
       ${escape(text)}${voltage && !onlyIfLow ? ` · ${escape(voltage)}` : ""}</span>`;
   }
 
-  _chips(entities) {
-    const chips = [this._batteryChip(entities)];
-    const signal = this._format(entities.signal);
+  _chips(entities, show) {
+    const chips = [show.battery ? this._batteryChip(entities) : ""];
+    const signal = show.signal ? this._format(entities.signal) : null;
     if (signal && this._state(entities.signal)?.state !== "unavailable") {
       chips.push(`<span class="chip clickable" data-entity="${escape(entities.signal)}">
         <ha-icon icon="mdi:bluetooth"></ha-icon>${escape(signal)}</span>`);
     }
-    const firmware = this._state(entities.firmware)?.state;
+    const firmware = show.firmware ? this._state(entities.firmware)?.state : null;
     if (firmware && !["unknown", "unavailable"].includes(firmware)) {
       chips.push(`<span class="chip clickable" data-entity="${escape(entities.firmware)}">
         <ha-icon icon="mdi:chip"></ha-icon>Firmware ${escape(firmware)}</span>`);
@@ -541,7 +622,8 @@ class KubuBleCard extends Base {
     const rows = items
       .map(
         (item) => `<li class="clickable" data-entity="${escape(item.entityId)}">
-          <span>${escape(item.label)}</span>
+          <span class="what"><ha-icon class="${escape(item.tone || "")}"
+            icon="${escape(item.icon)}"></ha-icon>${escape(item.label)}</span>
           <span class="when" title="${escape(relativeTime(item.time, Date.now(), locale))}">
             ${escape(formatWhen(item.time, Date.now(), options))}</span></li>`,
       )
@@ -592,13 +674,34 @@ const SCHEMA = [
   },
   { name: "name", selector: { text: {} } },
   { name: "compact", selector: { boolean: {} } },
-  { name: "show_battery", selector: { boolean: {} } },
-  { name: "show_alerts", selector: { boolean: {} } },
-  { name: "show_activity", selector: { boolean: {} } },
-  { name: "show_details", selector: { boolean: {} } },
   {
-    name: "activity_hours",
-    selector: { number: { min: 1, max: 168, mode: "box", unit_of_measurement: "h" } },
+    name: "parts",
+    type: "expandable",
+    flatten: true,
+    title: "Show",
+    icon: "mdi:eye",
+    schema: [
+      {
+        name: "",
+        type: "grid",
+        schema: [
+          "show_icon",
+          "show_name",
+          "show_status",
+          "show_since",
+          "show_alerts",
+          "show_battery",
+          "show_signal",
+          "show_firmware",
+          "show_activity",
+          "show_details",
+        ].map((name) => ({ name, selector: { boolean: {} } })),
+      },
+      {
+        name: "activity_hours",
+        selector: { number: { min: 1, max: 168, mode: "box", unit_of_measurement: "h" } },
+      },
+    ],
   },
 ];
 
@@ -606,11 +709,17 @@ const LABELS = {
   device_id: "Kubu sensor",
   name: "Name (optional)",
   compact: "Compact (one line)",
-  show_battery: "Show battery, signal and firmware",
-  show_alerts: "Show tamper and vibration alerts",
-  show_activity: "Show recent activity",
-  show_details: "Show model and settings",
-  activity_hours: "Recent activity: hours to look back",
+  show_icon: "Icon",
+  show_name: "Name",
+  show_status: "Status",
+  show_since: "Since when",
+  show_alerts: "Alerts",
+  show_battery: "Battery",
+  show_signal: "Signal",
+  show_firmware: "Firmware",
+  show_activity: "Recent activity",
+  show_details: "Model and settings",
+  activity_hours: "Hours of history to look back",
 };
 
 class KubuBleCardEditor extends Base {
@@ -630,7 +739,8 @@ class KubuBleCardEditor extends Base {
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (schema) => LABELS[schema.name] || schema.name;
       this._form.addEventListener("value-changed", (ev) => {
-        this._config = ev.detail.value;
+        this._config = configChange(this._config, this._form.data, ev.detail.value);
+        this._form.data = resolveConfig(this._config);
         this.dispatchEvent(
           new CustomEvent("config-changed", {
             detail: { config: this._config },
@@ -643,7 +753,7 @@ class KubuBleCardEditor extends Base {
     }
     this._form.hass = this._hass;
     this._form.schema = SCHEMA;
-    this._form.data = { ...DEFAULTS, ...this._config };
+    this._form.data = resolveConfig(this._config);
   }
 }
 

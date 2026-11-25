@@ -138,11 +138,19 @@ Tap it, or any part of it, for more details.
 | `device_id` | (required) | The Kubu sensor to show. |
 | `name` | the device name | Show another name. |
 | `compact` | `false` | One line, like a tile. Good for many sensors. |
-| `show_battery` | `true` | Battery, signal and firmware. |
+| `show_icon` | `true` | The big state icon. |
+| `show_name` | `true` | The name. |
+| `show_status` | `true` | "Locked", "Open", ... |
+| `show_since` | `true` | "since 2 hours ago". |
 | `show_alerts` | `true` | Tamper, vibration and excessive force banner. |
+| `show_battery` | `true` | Battery state and voltage. |
+| `show_signal` | `true` | Signal strength (if that entity is on). |
+| `show_firmware` | `true` | Firmware version. |
 | `show_activity` | `true` | Recent activity. |
 | `show_details` | `true` | Model, vibration sensitivity and battery type. |
-| `activity_hours` | `24` | How far back recent activity looks. |
+| `activity_hours` | `24` | How far back recent activity and "since" look. |
+
+With `compact: true`, only the icon, name, status and a low battery show by default. Turn on any other part with its `show_` option.
 
 ## Problems and reports
 
