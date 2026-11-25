@@ -5,6 +5,8 @@
 This Home Assistant integration provides support for local/offline Kubu Bluetooth door and window sensors.
 It uses Home Assistant's own Bluetooth adapter (or an ESPHome Bluetooth proxy). You don't need a Kubu hub.
 
+<img width="1235" height="889" alt="Home Assistant screenshot of a Kubu BLE device" src="https://github.com/user-attachments/assets/d97d9081-0ac8-4651-ac54-00e9ebe755c7" />
+
 Kubu sensors encrypt state with a key stored in Kubu's cloud.
 During setup, the integration will sign in to your Kubu account to get the key for offline decryption.
 Your email and password are not saved.
