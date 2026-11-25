@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from functools import partial
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataUpdate,
@@ -17,6 +18,18 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import MANUFACTURER
 from .device import KubuUpdate
 from .protocol import KubuReading
+
+if TYPE_CHECKING:
+    from . import KubuSensor
+
+
+def add_entities_for(
+    sensor: KubuSensor, async_add_entities: AddConfigEntryEntitiesCallback
+) -> AddConfigEntryEntitiesCallback:
+    """async_add_entities that puts entities in the sensor's subentry."""
+    if sensor.subentry_id is None:
+        return async_add_entities  # legacy one-sensor entry
+    return partial(async_add_entities, config_subentry_id=sensor.subentry_id)
 
 
 def build_update[T](

@@ -25,7 +25,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import KubuConfigEntry
+from . import KubuConfigEntry, KubuSensor
 from .const import (
     CONF_SENSOR_CLASS,
     CONF_SENSOR_TYPE,
@@ -34,7 +34,7 @@ from .const import (
     SENSOR_TYPE_RETRO_PRO,
 )
 from .device import KubuUpdate
-from .entity import build_update, only_known_entities
+from .entity import add_entities_for, build_update, only_known_entities
 
 DESCRIPTIONS = {
     # Firmware version, sent in every frame.
@@ -82,17 +82,20 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Kubu sensors."""
-    coordinator = entry.runtime_data.coordinator
-    processor = PassiveBluetoothDataProcessor(update_to_bluetooth_data_update)
-    entry.async_on_unload(
-        processor.async_add_entities_listener(
-            KubuSensorEntity, only_known_entities(DESCRIPTIONS, async_add_entities)
+    for sensor in entry.runtime_data.sensors.values():
+        add = add_entities_for(sensor, async_add_entities)
+        processor = PassiveBluetoothDataProcessor(update_to_bluetooth_data_update)
+        entry.async_on_unload(
+            processor.async_add_entities_listener(
+                KubuSensorEntity, only_known_entities(DESCRIPTIONS, add)
+            )
         )
-    )
-    entry.async_on_unload(
-        coordinator.async_register_processor(processor, SensorEntityDescription)
-    )
-    async_add_entities([KubuSensitivitySensor(entry), KubuBatteryTypeSensor(entry)])
+        entry.async_on_unload(
+            sensor.coordinator.async_register_processor(
+                processor, SensorEntityDescription
+            )
+        )
+        add([KubuSensitivitySensor(sensor), KubuBatteryTypeSensor(sensor)])
 
 
 class KubuSensorEntity(
@@ -118,8 +121,7 @@ class KubuSensitivitySensor(SensorEntity):
     """Vibration sensitivity as saved in the Kubu account.
 
     The sensor does not broadcast its sensitivity, so this is the value from
-    the last sign-in (setup, re-auth or Reconfigure). Change it in the Kubu
-    app, then use Reconfigure to refresh it here.
+    the Kubu account, refreshed every few hours.
     """
 
     _attr_has_entity_name = True
@@ -129,14 +131,16 @@ class KubuSensitivitySensor(SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_should_poll = False
 
-    def __init__(self, entry: KubuConfigEntry) -> None:
-        """Set up from the config entry."""
-        address = entry.data[CONF_ADDRESS]
+    def __init__(self, sensor: KubuSensor) -> None:
+        """Set up from the sensor's stored data."""
+        data = sensor.data
+        address = data[CONF_ADDRESS]
         self._attr_unique_id = f"{address}-vibration_sensitivity"
+        # Named, as this may create the device before any Bluetooth data.
         self._attr_device_info = DeviceInfo(
-            connections={(CONNECTION_BLUETOOTH, address)}
+            connections={(CONNECTION_BLUETOOTH, address)}, name=sensor.name
         )
-        value = entry.data.get(CONF_VIB_SETTING)
+        value = data.get(CONF_VIB_SETTING)
         self._attr_native_value = value if value in VIB_SETTINGS else None
 
 
@@ -154,18 +158,17 @@ class KubuBatteryTypeSensor(SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_should_poll = False
 
-    def __init__(self, entry: KubuConfigEntry) -> None:
-        """Set up from the config entry."""
-        address = entry.data[CONF_ADDRESS]
+    def __init__(self, sensor: KubuSensor) -> None:
+        """Set up from the sensor's stored data."""
+        data = sensor.data
+        address = data[CONF_ADDRESS]
         self._attr_unique_id = f"{address}-battery_type"
+        # Named, as this may create the device before any Bluetooth data.
         self._attr_device_info = DeviceInfo(
-            connections={(CONNECTION_BLUETOOTH, address)}
+            connections={(CONNECTION_BLUETOOTH, address)}, name=sensor.name
         )
-        sensor_class = entry.data.get(CONF_SENSOR_CLASS)
-        if (
-            sensor_class is None
-            and entry.data.get(CONF_SENSOR_TYPE) == SENSOR_TYPE_RETRO_PRO
-        ):
+        sensor_class = data.get(CONF_SENSOR_CLASS)
+        if sensor_class is None and data.get(CONF_SENSOR_TYPE) == SENSOR_TYPE_RETRO_PRO:
             sensor_class = SENSOR_CLASS_RETRO_PRO  # set up before the class was stored
         if sensor_class is None:
             self._attr_native_value = None

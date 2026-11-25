@@ -70,13 +70,17 @@ class KubuDeviceData:
         serial: str | None = None,
         sensor_class: str | None = None,
         product_type: str | None = None,
+        name: str | None = None,
     ) -> None:
         """Set up with the sensor's dpKey.
 
         on_bad_key is called once after bad_key_threshold new payloads in a
         row fail to decode, which means the stored key does not match.
+        name is the device name (the sensor's name in the Kubu app); without
+        it, the Bluetooth name is used.
         """
         self._key = key
+        self._name = name
         self._serial = serial
         self._sensor_type = sensor_type
         self._sensor_class = sensor_class
@@ -153,7 +157,7 @@ class KubuDeviceData:
                     reading = replace(reading, battery_mv=self._last_reading.battery_mv)
                 self._last_reading = reading
         return KubuUpdate(
-            name=service_info.name or service_info.address,
+            name=self._name or service_info.name or service_info.address,
             rssi=service_info.rssi,
             reading=self._last_reading,
             serial=self._serial,

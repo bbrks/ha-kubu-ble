@@ -12,8 +12,9 @@ It uses Home Assistant's own Bluetooth adapter (or an ESPHome Bluetooth proxy). 
 <img width="1235" height="889" alt="Home Assistant screenshot of a Kubu BLE device" src="https://github.com/user-attachments/assets/d97d9081-0ac8-4651-ac54-00e9ebe755c7" />
 
 Kubu sensors encrypt state with a key stored in Kubu's cloud.
-During setup, the integration will sign in to your Kubu account to get the key for offline decryption.
-Your email and password are not saved.
+You sign in to your Kubu account once. The integration gets each sensor's key, then reads the sensors locally over Bluetooth.
+Your password is not saved. Like the Kubu app, the integration keeps a sign-in token, so it can check your account every few hours for new sensors and changes (names, settings).
+The sensors keep working if the Kubu cloud or your internet is down.
 
 This project was achieved by reverse engineering the Kubu Android app - but is not made by nor supported by Kubu.
 
@@ -64,17 +65,29 @@ To install it manually instead, download the latest release, copy `custom_compon
 
 ## Set up
 
-Home Assistant should find the sensor by itself and list it under `Settings > Devices & services > Discovered`. If it doesn't, add a device manually:
+Home Assistant should find your sensors by itself and list them under `Settings > Devices & services > Discovered`. Or add the integration yourself:
 
 [![Open your Home Assistant instance and start setting up Kubu BLE.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=kubu_ble)
 
-1. Sign in with your Kubu email and password. 
-2. If you have more sensors, setting up the next ones shortly after doesn't need another sign-in.
+1. Sign in with your Kubu email and password.
+2. That's it. You get one entry for your Kubu account, with every sensor Home Assistant can hear in it.
+
+After that:
+
+- **New sensors** you set up in the Kubu app are added on their own once Home Assistant hears them.
+- **Changes in the Kubu app** (sensor name, vibration sensitivity) show up within a few hours.
+- **Removed a sensor here?** It is not added back. To add it again, open the account entry and choose *Add sensor*.
+- **Sensor removed from your Kubu account?** You get a repair notice. It keeps working with its saved key until you remove it.
 
 Entities only appear once Home Assistant has decoded the sensor's data.
 If nothing shows up, turn the key or open the door once, and check that your scanning mode isn't Passive.
 
-If the stored key ever stops working to decrypt, Home Assistant will ask you to sign in again.
+If a sensor's key stops working, Home Assistant fetches the keys again from your account. If the sign-in token has expired, it asks you to sign in again. The sensors keep working meanwhile.
+
+### Upgrading from 1.0
+
+Before 1.1.0, each sensor was its own entry, and the integration never went back to the Kubu cloud. Those entries still work.
+You will see a repair notice: sign in once, and your sensors move into one account entry. Devices, entity IDs, names and history stay the same.
 
 ## Problems and reports
 
@@ -83,10 +96,10 @@ If the stored key ever stops working to decrypt, Home Assistant will ask you to 
 Systematically do each action possible for the sensor - e.g. lock, unlock, open, close, etc.
 Make a note of what actions you did and in what order - it will help correlate the captured packets which are shared in the diagnostics file.
 
-Go to `Settings > Devices & services > Kubu BLE > ⋮ > Download diagnostics` and attach the file to a [new issue - with your reported set of steps](https://github.com/bbrks/ha-kubu-ble/issues)
+Open the sensor's device page (`Settings > Devices & services > Kubu BLE`, then the sensor), choose `⋮ > Download diagnostics`, and attach the file to a [new issue - with your reported set of steps](https://github.com/bbrks/ha-kubu-ble/issues)
 
 The file contains the sensor type, firmware and recent decrypted frames for analysis.
-The key, Bluetooth address and serial number are removed for privacy reasons.
+The key, Bluetooth address, serial number, email and sign-in token are removed for privacy reasons.
 
 ### Report new/unknown sensor type
 If setup says your sensor isn't known at all, run `dev/kubu_cloud_check.py` (see [dev/README.md](https://github.com/bbrks/ha-kubu-ble/blob/main/dev/README.md)) and include the `type=`, `class=` and `product=` values it prints, but avoid sharing the key.

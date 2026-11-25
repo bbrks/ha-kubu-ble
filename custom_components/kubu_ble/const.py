@@ -11,10 +11,27 @@ CONF_SENSOR_CLASS = "sensor_class"
 CONF_PRODUCT_TYPE = "product_type"
 CONF_VIB_SETTING = "vib_setting"
 
-# Keys fetched from the cloud are kept in memory this long, so setting up
-# several sensors in a row only needs one sign-in.
+# Account entries (one per Kubu account) keep these. Never the password:
+# like the Kubu app, a refresh token gets new 5 minute ID tokens.
+CONF_REFRESH_TOKEN = "refresh_token"
+# Sensors removed by the user, so the cloud refresh does not add them again.
+CONF_IGNORED = "ignored_sensors"
+
+# Each sensor is a subentry of its account entry.
+SUBENTRY_SENSOR = "sensor"
+
+# How often to refresh sensor details (names, keys, settings) and look for
+# new sensors in the Kubu account. The sensors are read locally, so this is
+# only for changes made in the Kubu app.
+CLOUD_REFRESH_INTERVAL_HOURS = 6
+# Sensor lists fetched from the cloud are reused for this long, so adding
+# several sensors in a row (or discovery right after a refresh) is one visit.
 CLOUD_CACHE_SECONDS = 600
-DATA_CLOUD_CACHE = f"{DOMAIN}_cloud_cache"
+
+# Repair issues.
+ISSUE_LEGACY_ENTRIES = "legacy_entries"
+# By subentry ID, not address: diagnostics include the domain's issue IDs.
+ISSUE_NOT_IN_ACCOUNT = "not_in_account_{subentry_id}"
 
 # Re-ask for sign-in after this many adverts that do not decode.
 BAD_KEY_REAUTH_THRESHOLD = 5

@@ -2,42 +2,36 @@
   "config": {
     "flow_title": "{name}",
     "step": {
-      "user": {
-        "description": "Choose a Kubu sensor found nearby.",
-        "data": {
-          "address": "Device"
-        }
-      },
       "login": {
         "title": "Sign in to Kubu",
-        "description": "Sign in with the email and password you use in the Kubu app. Home Assistant uses this once to get the key for {name}. Your email and password are not saved, and after setup the sensor is read locally over Bluetooth.\n\nThe sensor must already be set up in the Kubu app.",
+        "description": "Sign in with the email and password you use in the Kubu app.\n\nHome Assistant adds every Kubu sensor in your account that it can hear, and adds the others as soon as they are in range. Sensors are read locally over Bluetooth.\n\nYour password is not saved. Home Assistant keeps a sign-in token, like the Kubu app does, to check your account for new sensors and changes now and then.\n\nSensors must already be set up in the Kubu app.",
         "data": {
           "email": "Email",
           "password": "Password"
         }
       },
-      "confirm": {
-        "description": "Set up {name}? Its key was fetched from your Kubu account a moment ago."
-      },
       "unverified": {
-        "title": "Untested sensor",
-        "description": "{name} is a **{model}** ({sensor_class}, type {sensor_type}). This model has not been tested with this integration yet.\n\nIt is read the same way the Kubu app reads it, so it should work, but some states may be wrong or missing. Please tell us how it goes, good or bad: open an issue at {issues_url} with the diagnostics file (*Kubu BLE → ⋮ → Download diagnostics*) and what you did (locked, opened, tilted…).\n\nSet it up anyway?"
+        "title": "Untested sensors",
+        "description": "These sensors are of models that have not been tested with this integration yet:\n\n{sensors}\n\nThey are read the same way the Kubu app reads them, so they should work, but some states may be wrong or missing. Please tell us how it goes, good or bad: open an issue at {issues_url} with the sensor's diagnostics file (*device page → ⋮ → Download diagnostics*) and what you did (locked, opened, tilted…).\n\nSet them up anyway?"
       }
     },
     "error": {
       "invalid_auth": "Wrong email or password. Accounts that sign in with Google are not supported.",
       "cannot_connect": "Could not reach the Kubu cloud. Try again later.",
-      "not_in_account": "This sensor is not in your Kubu account. Set it up in the Kubu app first.",
+      "not_in_account": "This sensor is not in this Kubu account. Set it up in the Kubu app first, or sign in to the account it is in.",
       "key_mismatch": "The key from your Kubu account does not decode this sensor's data. Please open an issue at {issues_url}.",
       "too_many_attempts": "Too many failed sign-ins. Kubu has locked sign-in for 5 minutes; wait and try again.",
       "email_not_verified": "Your email is not verified yet. Verify it from the Kubu app, then try again."
     },
     "abort": {
-      "already_configured": "This device is already set up.",
-      "no_devices_found": "No Kubu sensors found nearby. Make sure Bluetooth is set up and active scanning is on.",
+      "already_configured": "This is already set up.",
       "not_supported": "This device is not supported.",
       "unsupported_sensor": "This Kubu sensor ({sensor_class}, type {sensor_type}) is not known to this integration yet. Please open an issue at {issues_url} with the class and type shown here.",
-      "reauth_successful": "The sensor key was fetched again from your Kubu account.",
+      "key_mismatch": "The key from your Kubu account does not decode this sensor's data. Please open an issue at {issues_url}.",
+      "sensor_added": "{name} was added to your Kubu account in Home Assistant.",
+      "account_updated": "This Kubu account is already set up. Sensors added: {count}.",
+      "wrong_account": "That is a different Kubu account. Sign in to the account this entry is for.",
+      "reauth_successful": "Signed in again.",
       "reconfigure_successful": "Refreshed from your Kubu account."
     }
   },
@@ -69,6 +63,62 @@
       "battery_type": {
         "name": "Battery type"
       }
+    }
+  },
+  "config_subentries": {
+    "sensor": {
+      "entry_type": "Sensor",
+      "initiate_flow": {
+        "user": "Add sensor"
+      },
+      "step": {
+        "user": {
+          "title": "Add a Kubu sensor",
+          "description": "Choose a sensor from your Kubu account. Sensors in range are added on their own, so this is for sensors you removed before, or that are not in range yet.",
+          "data": {
+            "address": "Sensor"
+          }
+        }
+      },
+      "error": {
+        "key_mismatch": "The key from your Kubu account does not decode this sensor's data. Please open an issue at {issues_url}."
+      },
+      "abort": {
+        "account_not_loaded": "The Kubu account entry is not loaded. Check it for errors first.",
+        "cannot_connect": "Could not reach the Kubu cloud. Try again later.",
+        "reauth_required": "The Kubu sign-in has expired. Sign in again from the notification, then try again.",
+        "no_sensors": "Every sensor in your Kubu account is already set up.",
+        "unsupported_sensor": "This Kubu sensor ({sensor_class}, type {sensor_type}) is not known to this integration yet. Please open an issue at {issues_url} with the class and type shown here.",
+        "already_configured": "This sensor is already set up."
+      }
+    }
+  },
+  "issues": {
+    "legacy_entries": {
+      "title": "Sign in to Kubu to keep your sensors up to date",
+      "fix_flow": {
+        "step": {
+          "sign_in": {
+            "title": "Sign in to Kubu",
+            "description": "Kubu BLE now sets up one entry per Kubu account, with your sensors in it. {count} sensor(s) still use the old setup, which can't pick up changes made in the Kubu app.\n\nSign in once to move them. Devices, entity IDs, names and history stay the same. Your password is not saved.",
+            "data": {
+              "email": "Email",
+              "password": "Password"
+            }
+          }
+        },
+        "error": {
+          "invalid_auth": "Wrong email or password. Accounts that sign in with Google are not supported.",
+          "cannot_connect": "Could not reach the Kubu cloud. Try again later.",
+          "too_many_attempts": "Too many failed sign-ins. Kubu has locked sign-in for 5 minutes; wait and try again.",
+          "email_not_verified": "Your email is not verified yet. Verify it from the Kubu app, then try again.",
+          "no_sensors_to_move": "None of the sensors to move are in this Kubu account. Sign in to the account they are in."
+        }
+      }
+    },
+    "not_in_account": {
+      "title": "Kubu sensor not in your account",
+      "description": "{name} is no longer in your Kubu account. It still works with its saved key. If you removed it from the Kubu app on purpose, remove it here too: open the Kubu BLE entry and delete the sensor."
     }
   }
 }

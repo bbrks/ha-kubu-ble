@@ -18,9 +18,9 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import KubuConfigEntry
+from . import KubuConfigEntry, KubuSensor
 from .device import KubuUpdate
-from .entity import build_update, only_known_entities
+from .entity import add_entities_for, build_update, only_known_entities
 from .protocol import VIBRATION_FORCE, KubuModel, KubuState
 
 DESCRIPTIONS = {
@@ -136,8 +136,16 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Kubu binary sensors."""
-    coordinator = entry.runtime_data.coordinator
-    keys = keys_for_model(entry.runtime_data.device.model)
+    for sensor in entry.runtime_data.sensors.values():
+        _setup_sensor(entry, sensor, add_entities_for(sensor, async_add_entities))
+
+
+def _setup_sensor(
+    entry: KubuConfigEntry,
+    sensor: KubuSensor,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> None:
+    keys = keys_for_model(sensor.device.model)
     descriptions = {k: d for k, d in DESCRIPTIONS.items() if k in keys}
     values = {k: fn for k, fn in VALUES.items() if k in keys}
 
@@ -152,7 +160,9 @@ async def async_setup_entry(
         )
     )
     entry.async_on_unload(
-        coordinator.async_register_processor(processor, BinarySensorEntityDescription)
+        sensor.coordinator.async_register_processor(
+            processor, BinarySensorEntityDescription
+        )
     )
 
 

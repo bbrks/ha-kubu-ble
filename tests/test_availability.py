@@ -55,7 +55,7 @@ async def test_short_gap_stays_available(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     entry = await _setup(hass)
-    coordinator = entry.runtime_data.coordinator
+    coordinator = entry.runtime_data.sensors[None].coordinator
     # HA's tracker says "unavailable" after a 40 s gap...
     coordinator._async_handle_unavailable(_last_seen(40))
     await hass.async_block_till_done()
@@ -70,7 +70,7 @@ async def test_long_silence_goes_unavailable(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     entry = await _setup(hass)
-    coordinator = entry.runtime_data.coordinator
+    coordinator = entry.runtime_data.sensors[None].coordinator
     coordinator._async_handle_unavailable(_last_seen(40))
     await hass.async_block_till_done()
     with patch(PRESENT, return_value=False):
@@ -82,7 +82,9 @@ async def test_long_silence_goes_unavailable(
 
 async def test_already_past_grace_goes_unavailable_now(hass: HomeAssistant) -> None:
     entry = await _setup(hass)
-    entry.runtime_data.coordinator._async_handle_unavailable(_last_seen(600))
+    entry.runtime_data.sensors[None].coordinator._async_handle_unavailable(
+        _last_seen(600)
+    )
     await hass.async_block_till_done()
     assert hass.states.get(LOCK).state == STATE_UNAVAILABLE
 
@@ -91,7 +93,9 @@ async def test_unload_cancels_grace_timer(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     entry = await _setup(hass)
-    entry.runtime_data.coordinator._async_handle_unavailable(_last_seen(40))
+    entry.runtime_data.sensors[None].coordinator._async_handle_unavailable(
+        _last_seen(40)
+    )
     assert await hass.config_entries.async_unload(entry.entry_id)
     with patch(PRESENT, return_value=False):
         await _tick(hass, freezer, 400)  # must not raise or touch states

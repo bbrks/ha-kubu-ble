@@ -11,6 +11,9 @@ of seen devices. Together these give short, false "Unavailable" blips.
 
 So we only pass the unavailable state on if the sensor stays silent for a
 grace period, counted from its last packet.
+
+HA saves each coordinator's last data under its config entry ID. An account
+entry has one coordinator per sensor, so each needs its own restore key.
 """
 
 from __future__ import annotations
@@ -25,7 +28,9 @@ from homeassistant.components.bluetooth import (
     async_address_present,
 )
 from homeassistant.components.bluetooth.passive_update_processor import (
+    PASSIVE_UPDATE_PROCESSOR,
     PassiveBluetoothProcessorCoordinator,
+    PassiveBluetoothProcessorData,
 )
 from homeassistant.core import CALLBACK_TYPE, callback
 from homeassistant.helpers.event import async_call_later
@@ -38,9 +43,25 @@ _LOGGER = logging.getLogger(__name__)
 class KubuCoordinator(PassiveBluetoothProcessorCoordinator[KubuUpdate]):
     """Passive coordinator that ignores short gaps in adverts."""
 
-    def __init__(self, *args: Any, availability_grace: float, **kwargs: Any) -> None:
-        """Set up; availability_grace is in seconds since the last packet."""
+    def __init__(
+        self,
+        *args: Any,
+        availability_grace: float,
+        restore_key: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Set up; availability_grace is in seconds since the last packet.
+
+        restore_key replaces the config entry ID as the key HA saves this
+        coordinator's data under.
+        """
         super().__init__(*args, **kwargs)
+        if restore_key is not None:
+            data: PassiveBluetoothProcessorData = self.hass.data[
+                PASSIVE_UPDATE_PROCESSOR
+            ]
+            self.restore_key = restore_key
+            self.restore_data = data.all_restore_data.setdefault(restore_key, {})
         self._availability_grace = availability_grace
         self._cancel_grace: CALLBACK_TYPE | None = None
         self._on_stop.append(self._async_cancel_grace)
