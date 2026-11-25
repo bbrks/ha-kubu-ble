@@ -31,6 +31,7 @@ from .account import (
     KubuAccount,
     async_abort_discovery_flows,
     is_account_entry,
+    is_offline,
     sensor_subentries,
 )
 from .cloud import normalize_mac
@@ -85,6 +86,7 @@ class KubuRuntimeData:
     # spot changes. A copy: HA changes subentry objects in place.
     snapshot: dict[str, _Snapshot] = field(default_factory=dict)
     refresh_token: str | None = None
+    offline: bool = False
     # One reload covers any number of changes made in a row.
     reload_scheduled: bool = False
 
@@ -146,11 +148,11 @@ def _async_on_bad_key(hass: HomeAssistant, entry: KubuConfigEntry) -> None:
     """The stored key stopped decoding the sensor's data.
 
     An account entry first fetches the keys again with its refresh token
-    (it asks for the password only if that fails). A legacy entry can only
-    ask to sign in again.
+    (it asks for the password only if that fails). A legacy entry, or one
+    in offline mode, asks to sign in again.
     """
     account = entry.runtime_data.account
-    if account is None:
+    if account is None or is_offline(entry):
         entry.async_start_reauth(hass)
         return
 
@@ -187,7 +189,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> bool
         )
     account = KubuAccount(hass, entry)
     entry.runtime_data = KubuRuntimeData(
-        sensors, account, _snapshot(entry), entry.data[CONF_REFRESH_TOKEN]
+        sensors,
+        account,
+        _snapshot(entry),
+        entry.data[CONF_REFRESH_TOKEN],
+        is_offline(entry),
     )
     await _async_start(hass, entry)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -234,7 +240,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> Non
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: KubuConfigEntry) -> None:
-    """Reload when sensors are added, removed or changed, or after sign-in.
+    """Reload when sensors or options change, or after signing in again.
 
     Remember sensors the user removed, so the cloud refresh does not add
     them back. Adding one again by hand clears that.
@@ -250,7 +256,11 @@ async def _async_update_listener(hass: HomeAssistant, entry: KubuConfigEntry) ->
             new_ignored.add(normalize_mac(data[CONF_ADDRESS]))
             _delete_not_in_account_issue(hass, subentry_id)
     new_ignored -= {normalize_mac(data[CONF_ADDRESS]) for _, _, data in new.values()}
-    changed = new != old or entry.data[CONF_REFRESH_TOKEN] != runtime.refresh_token
+    changed = (
+        new != old
+        or entry.data[CONF_REFRESH_TOKEN] != runtime.refresh_token
+        or is_offline(entry) != runtime.offline
+    )
     if changed:
         runtime.reload_scheduled = True
     if new_ignored != ignored:

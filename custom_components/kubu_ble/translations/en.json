@@ -4,10 +4,14 @@
     "step": {
       "login": {
         "title": "Sign in to Kubu",
-        "description": "Sign in with the email and password you use in the Kubu app.\n\nHome Assistant adds every Kubu sensor in your account that it can hear, and adds the others as soon as they are in range. Sensors are read locally over Bluetooth.\n\nYour password is not saved. Home Assistant keeps a sign-in token, like the Kubu app does, to check your account for new sensors and changes now and then.\n\nSensors must already be set up in the Kubu app.",
+        "description": "Sign in with the email and password you use in the Kubu app.\n\nHome Assistant adds every Kubu sensor in your account that it can hear, and adds the others as soon as they are in range. Sensors are read locally over Bluetooth.\n\nYour password is not saved. Home Assistant keeps a sign-in token, like the Kubu app does, to check your account for new sensors and changes now and then. Turn on offline mode to stop that.\n\nSensors must already be set up in the Kubu app.",
         "data": {
           "email": "Email",
-          "password": "Password"
+          "password": "Password",
+          "offline_mode": "Offline mode"
+        },
+        "data_description": {
+          "offline_mode": "After setup, never contact the Kubu cloud on its own. Sensors are read over Bluetooth only. New sensors and changes in the Kubu app are not picked up until you sign in again or add a sensor by hand."
         }
       },
       "unverified": {
@@ -103,7 +107,11 @@
             "description": "Kubu BLE now sets up one entry per Kubu account, with your sensors in it. {count} sensor(s) still use the old setup, which can't pick up changes made in the Kubu app.\n\nSign in once to move them. Devices, entity IDs, names and history stay the same. Your password is not saved.",
             "data": {
               "email": "Email",
-              "password": "Password"
+              "password": "Password",
+              "offline_mode": "Offline mode"
+            },
+            "data_description": {
+              "offline_mode": "After setup, never contact the Kubu cloud on its own. Sensors are read over Bluetooth only. New sensors and changes in the Kubu app are not picked up until you sign in again or add a sensor by hand."
             }
           }
         },
@@ -119,6 +127,19 @@
     "not_in_account": {
       "title": "Kubu sensor not in your account",
       "description": "{name} is no longer in your Kubu account. It still works with its saved key. If you removed it from the Kubu app on purpose, remove it here too: open the Kubu BLE entry and delete the sensor."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Kubu account options",
+        "data": {
+          "offline_mode": "Offline mode"
+        },
+        "data_description": {
+          "offline_mode": "After setup, never contact the Kubu cloud on its own. Sensors are read over Bluetooth only. New sensors and changes in the Kubu app are not picked up until you sign in again or add a sensor by hand."
+        }
+      }
     }
   }
 }

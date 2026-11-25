@@ -18,11 +18,12 @@ from homeassistant.core import HomeAssistant
 from .config_flow import (
     IMPORT_NODES,
     IMPORT_USER_ID,
-    LOGIN_SCHEMA,
+    SETUP_SCHEMA,
     async_sign_in,
+    known_email,
     legacy_sensors,
 )
-from .const import CONF_REFRESH_TOKEN, DOMAIN, ISSUE_LEGACY_ENTRIES
+from .const import CONF_OFFLINE, CONF_REFRESH_TOKEN, DOMAIN, ISSUE_LEGACY_ENTRIES
 
 
 class LegacyEntriesRepairFlow(RepairsFlow):
@@ -56,6 +57,7 @@ class LegacyEntriesRepairFlow(RepairsFlow):
                         CONF_REFRESH_TOKEN: sign_in.refresh_token,
                         IMPORT_USER_ID: sign_in.user_id,
                         IMPORT_NODES: sign_in.nodes,
+                        CONF_OFFLINE: user_input.get(CONF_OFFLINE, False),
                     },
                 )
                 # Sensors from other accounts raise this notice again once
@@ -64,8 +66,13 @@ class LegacyEntriesRepairFlow(RepairsFlow):
         return self.async_show_form(
             step_id="sign_in",
             data_schema=self.add_suggested_values_to_schema(
-                LOGIN_SCHEMA,
-                {CONF_EMAIL: user_input[CONF_EMAIL]} if user_input else {},
+                SETUP_SCHEMA,
+                {CONF_EMAIL: email}
+                if (
+                    email := (user_input or {}).get(CONF_EMAIL)
+                    or known_email(self.hass)
+                )
+                else {},
             ),
             errors=errors,
             description_placeholders={"count": str(len(legacy_sensors(self.hass)))},

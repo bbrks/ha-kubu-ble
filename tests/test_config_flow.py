@@ -520,3 +520,81 @@ async def test_reauth_of_loaded_account_reloads_it(
     assert entry.data[CONF_REFRESH_TOKEN] == REFRESH_TOKEN
     assert entry.runtime_data.refresh_token == REFRESH_TOKEN  # reloaded
     assert "update listener" not in caplog.text
+
+
+# --- Remembered email and offline mode -----------------------------------------
+
+
+def _suggested(result, field: str = CONF_EMAIL):
+    for key in result["data_schema"].schema:
+        if key == field:
+            return (key.description or {}).get("suggested_value")
+    raise KeyError(field)
+
+
+async def test_sign_in_form_remembers_email(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    account_entry().add_to_hass(hass)
+    result = await _start_user(hass)
+    assert _suggested(result) == EMAIL
+    # Only the email: there is never a password to fill in.
+    assert _suggested(result, CONF_PASSWORD) is None
+
+
+async def test_legacy_reauth_remembers_email(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    entry = _legacy_entry()
+    entry.add_to_hass(hass)
+    mock_cloud(aioclient_mock)
+    result = await entry.start_reauth_flow(hass)
+    assert _suggested(result) is None
+    await _sign_in(hass, result["flow_id"])
+    assert entry.data[CONF_EMAIL] == EMAIL
+    result = await entry.start_reauth_flow(hass)
+    assert _suggested(result) == EMAIL
+
+
+async def test_offline_mode_chosen_at_setup(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock)
+    result = await _start_user(hass)
+    assert _suggested(result, "offline_mode") is None  # off unless ticked
+    with (
+        patch(PATCH_NEARBY, return_value=[make_service_info(LOCKED)]),
+        patch(PATCH_SETUP, return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {**LOGIN, "offline_mode": True}
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["result"].options == {"offline_mode": True}
+    assert set(_sensors(result["result"])) == {ADDRESS}
+
+
+async def test_reauth_form_has_no_offline_box(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    entry = account_entry()
+    entry.add_to_hass(hass)
+    result = await entry.start_reauth_flow(hass)
+    with pytest.raises(KeyError):
+        _suggested(result, "offline_mode")
+
+
+async def test_discovery_in_offline_mode_asks_to_sign_in(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """Offline mode: the stored token is not used without the user."""
+    mock_cloud(aioclient_mock)
+    entry = account_entry()
+    entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(entry, options={"offline_mode": True})
+    with patch(PATCH_NEARBY, return_value=[]):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        result = await _start_discovery(hass)
+    assert result["step_id"] == "login"
+    assert aioclient_mock.call_count == 0

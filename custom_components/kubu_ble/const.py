@@ -16,6 +16,10 @@ CONF_VIB_SETTING = "vib_setting"
 CONF_REFRESH_TOKEN = "refresh_token"
 # Sensors removed by the user, so the cloud refresh does not add them again.
 CONF_IGNORED = "ignored_sensors"
+# Option: never visit the Kubu cloud on our own after setup. Sensors are
+# read over Bluetooth only; the cloud is used only when the user signs in
+# again, reconfigures or adds a sensor by hand.
+CONF_OFFLINE = "offline_mode"
 
 # Each sensor is a subentry of its account entry.
 SUBENTRY_SENSOR = "sensor"

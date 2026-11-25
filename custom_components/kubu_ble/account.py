@@ -45,6 +45,7 @@ from .const import (
     CLOUD_REFRESH_INTERVAL_HOURS,
     CONF_DP_KEY,
     CONF_IGNORED,
+    CONF_OFFLINE,
     CONF_PRODUCT_TYPE,
     CONF_REFRESH_TOKEN,
     CONF_SENSOR_CLASS,
@@ -75,6 +76,11 @@ _LOGGER = logging.getLogger(__name__)
 def is_account_entry(entry: ConfigEntry) -> bool:
     """Return True for an account entry, False for an old one-sensor entry."""
     return CONF_REFRESH_TOKEN in entry.data
+
+
+def is_offline(entry: ConfigEntry) -> bool:
+    """True if the user chose offline mode for this account entry."""
+    return bool(entry.options.get(CONF_OFFLINE))
 
 
 def sensor_subentries(entry: ConfigEntry) -> list[ConfigSubentry]:
@@ -257,7 +263,13 @@ class KubuAccount:
 
     @callback
     def async_start(self) -> None:
-        """Refresh in the background now, then every few hours."""
+        """Refresh in the background now, then every few hours.
+
+        In offline mode, never: the sensors are read over Bluetooth only.
+        """
+        if is_offline(self.entry):
+            _LOGGER.debug("Offline mode: not checking the Kubu cloud")
+            return
         self.entry.async_on_unload(
             async_track_time_interval(
                 self.hass,

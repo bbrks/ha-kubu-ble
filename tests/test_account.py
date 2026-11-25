@@ -348,3 +348,71 @@ async def test_sensor_in_setup_mode_is_not_added_yet(
     await _setup(hass, entry, nearby=[setup_mode])
     assert _sensors(entry) == {}
     assert "does not decode" not in caplog.text
+
+
+async def test_offline_mode_never_contacts_the_cloud(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock, RETRO_PRO_NODE, WINDOW_NODE)
+    entry = account_entry(sensor_subentry())
+    entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(entry, options={"offline_mode": True})
+    await _setup(hass, entry, nearby=[make_service_info(LOCKED)])
+    with patch(PATCH_NEARBY, return_value=[]):
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(hours=13))
+        await hass.async_block_till_done()
+    assert aioclient_mock.call_count == 0
+
+    # Bluetooth still works.
+    inject(hass, make_service_info(LOCKED))
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK).state == STATE_OFF
+
+    # A bad key asks to sign in, rather than going to the cloud.
+    for i in range(5):
+        frame = f"10010B29{i:04X}2CA7FFEA000010FF042E"
+        inject(hass, make_service_info(frame, key_hex="ff" * 16))
+        await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress_by_handler(DOMAIN)
+    assert [f["context"]["source"] for f in flows] == ["reauth"]
+    assert aioclient_mock.call_count == 0
+
+
+async def test_turning_offline_mode_off_and_on(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock, {**RETRO_PRO_NODE, "devAlias": "Front door"})
+    entry = account_entry(sensor_subentry())
+    entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(entry, options={"offline_mode": True})
+    await _setup(hass, entry)
+    assert aioclient_mock.call_count == 0
+
+    with patch(PATCH_NEARBY, return_value=[]):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert result["step_id"] == "init"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"offline_mode": False}
+        )
+        await hass.async_block_till_done()
+    assert entry.options == {"offline_mode": False}
+    # Reloaded and refreshed from the cloud straight away.
+    assert entry.runtime_data.offline is False
+    (subentry,) = entry.subentries.values()
+    assert subentry.title == "Front door"
+
+    with patch(PATCH_NEARBY, return_value=[]):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"offline_mode": True}
+        )
+        await hass.async_block_till_done()
+    assert entry.runtime_data.offline is True
+
+
+async def test_legacy_entries_have_no_options(hass: HomeAssistant) -> None:
+    from custom_components.kubu_ble.config_flow import KubuConfigFlow
+
+    legacy = MockConfigEntry(domain=DOMAIN, data={"address": ADDRESS})
+    assert KubuConfigFlow.async_supports_options_flow(legacy) is False
+    assert KubuConfigFlow.async_supports_options_flow(account_entry()) is True

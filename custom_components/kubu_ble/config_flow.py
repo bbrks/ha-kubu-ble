@@ -31,6 +31,7 @@ from homeassistant.config_entries import (
     ConfigSubentry,
     ConfigSubentryData,
     ConfigSubentryFlow,
+    OptionsFlow,
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_ADDRESS, CONF_EMAIL, CONF_PASSWORD
@@ -41,6 +42,7 @@ from .account import (
     configured_sensors,
     get_account,
     is_account_entry,
+    is_offline,
     key_matches_live_data,
     nearby_sensors,
     node_model,
@@ -59,6 +61,7 @@ from .cloud import (
     normalize_mac,
 )
 from .const import (
+    CONF_OFFLINE,
     CONF_PRODUCT_TYPE,
     CONF_REFRESH_TOKEN,
     CONF_SENSOR_CLASS,
@@ -76,6 +79,9 @@ ISSUES_URL = "https://github.com/bbrks/ha-kubu-ble/issues"
 LOGIN_SCHEMA = vol.Schema(
     {vol.Required(CONF_EMAIL): str, vol.Required(CONF_PASSWORD): str}
 )
+# The first sign-in also asks about offline mode.
+SETUP_SCHEMA = LOGIN_SCHEMA.extend({vol.Optional(CONF_OFFLINE, default=False): bool})
+OPTIONS_SCHEMA = vol.Schema({vol.Optional(CONF_OFFLINE, default=False): bool})
 
 # Passed to the import step by the repair flow, after it signed in.
 IMPORT_USER_ID = "user_id"
@@ -125,6 +131,22 @@ async def async_sign_in(
     return SignIn(email, cloud.refresh_token, user_id, nodes), None
 
 
+def known_email(hass: HomeAssistant, entry: ConfigEntry | None = None) -> str | None:
+    """The email to fill in on the sign-in form: the entry's own, else the
+    one used last. Only the email is kept, never the password.
+    """
+    if entry is not None and (email := entry.data.get(CONF_EMAIL)):
+        return email
+    used = [
+        e
+        for e in hass.config_entries.async_entries(DOMAIN, include_ignore=False)
+        if e.data.get(CONF_EMAIL)
+    ]
+    if not used:
+        return None
+    return max(used, key=lambda e: e.modified_at).data[CONF_EMAIL]
+
+
 def legacy_sensors(hass: HomeAssistant) -> dict[str, str]:
     """{MAC: address} of old one-sensor entries, to move into the account."""
     return {
@@ -153,6 +175,7 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         self._name: str | None = None
         self._sign_in: SignIn | None = None
         self._new_sensors: list[ConfigSubentryData] = []
+        self._offline: bool | None = None  # None: not asked (reauth etc.)
 
     @classmethod
     @callback
@@ -163,6 +186,18 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         if not is_account_entry(config_entry):
             return {}
         return {SUBENTRY_SENSOR: SensorSubentryFlow}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> KubuOptionsFlow:
+        """Offline mode can be turned on or off later."""
+        return KubuOptionsFlow()
+
+    @classmethod
+    @callback
+    def async_supports_options_flow(cls, config_entry: ConfigEntry) -> bool:
+        """Only account entries have options."""
+        return is_account_entry(config_entry)
 
     # --- Starting points ----------------------------------------------------
 
@@ -189,8 +224,8 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
 
         # Already signed in to an account that has this sensor? Just add it.
         for entry in self.hass.config_entries.async_entries(DOMAIN):
-            if (account := get_account(self.hass, entry)) is None:
-                continue
+            if (account := get_account(self.hass, entry)) is None or is_offline(entry):
+                continue  # offline mode: only the user starts cloud visits
             try:
                 nodes = await account.async_get_nodes()
             except KubuAuthError:
@@ -230,6 +265,7 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
             import_data[IMPORT_USER_ID],
             import_data[IMPORT_NODES],
         )
+        self._offline = bool(import_data.get(CONF_OFFLINE, False))
         return await self._async_set_up_account()
 
     async def async_step_reauth(
@@ -259,7 +295,10 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Sign in to the Kubu account."""
         errors: dict[str, str] = {}
+        first_setup = self.source not in (SOURCE_REAUTH, SOURCE_RECONFIGURE)
         if user_input is not None:
+            if first_setup:
+                self._offline = bool(user_input.get(CONF_OFFLINE, False))
             sign_in, error = await async_sign_in(
                 self.hass, user_input[CONF_EMAIL], user_input[CONF_PASSWORD]
             )
@@ -274,18 +313,21 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
                 else:
                     return result
 
-        suggested = {CONF_EMAIL: user_input[CONF_EMAIL]} if user_input else {}
-        if not suggested and self.source in (SOURCE_REAUTH, SOURCE_RECONFIGURE):
-            entry = (
-                self._get_reauth_entry()
-                if self.source == SOURCE_REAUTH
-                else self._get_reconfigure_entry()
-            )
-            if email := entry.data.get(CONF_EMAIL):
-                suggested = {CONF_EMAIL: email}
+        if user_input:
+            email = user_input[CONF_EMAIL]
+        elif self.source == SOURCE_REAUTH:
+            email = known_email(self.hass, self._get_reauth_entry())
+        elif self.source == SOURCE_RECONFIGURE:
+            email = known_email(self.hass, self._get_reconfigure_entry())
+        else:
+            email = known_email(self.hass)
+        suggested: dict[str, Any] = {CONF_EMAIL: email} if email else {}
+        if user_input and CONF_OFFLINE in user_input:
+            suggested[CONF_OFFLINE] = user_input[CONF_OFFLINE]
+        schema = SETUP_SCHEMA if first_setup else LOGIN_SCHEMA
         return self.async_show_form(
             step_id="login",
-            data_schema=self.add_suggested_values_to_schema(LOGIN_SCHEMA, suggested),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
             errors=errors,
             description_placeholders={
                 "name": self._name or "your sensors",
@@ -346,7 +388,11 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         if not key_matches_live_data(self.hass, self._address, node):
             return "key_mismatch"
         return self.async_update_reload_and_abort(
-            entry, data_updates=sensor_data(self._address, node)
+            entry,
+            data_updates={
+                **sensor_data(self._address, node),
+                CONF_EMAIL: self._sign_in.email,  # to fill in next time
+            },
         )
 
     async def _async_set_up_account(self) -> ConfigFlowResult:
@@ -379,8 +425,11 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
                 self.hass.config_entries.async_add_subentry(
                     entry, ConfigSubentry(**new)
                 )
+            options = dict(entry.options)
+            if self._offline is not None:
+                options[CONF_OFFLINE] = self._offline
             self.hass.config_entries.async_update_entry(
-                entry, data={**entry.data, **data}
+                entry, data={**entry.data, **data}, options=options
             )
             if self._address is not None and any(
                 s["unique_id"] == self._address for s in added
@@ -431,6 +480,26 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_REFRESH_TOKEN: self._sign_in.refresh_token,
             },
             subentries=self._new_sensors,
+            options={CONF_OFFLINE: bool(self._offline)},
+        )
+
+
+class KubuOptionsFlow(OptionsFlow):
+    """Turn offline mode on or off."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the options."""
+        if user_input is not None:
+            return self.async_create_entry(
+                data={**self.config_entry.options, **user_input}
+            )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                OPTIONS_SCHEMA, {CONF_OFFLINE: is_offline(self.config_entry)}
+            ),
         )
 
 

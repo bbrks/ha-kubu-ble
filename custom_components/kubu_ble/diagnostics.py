@@ -75,6 +75,7 @@ async def async_get_config_entry_diagnostics(
     return {
         "entry": async_redact_data(dict(entry.data), TO_REDACT),
         "ignored_sensors": len(entry.data.get(CONF_IGNORED, ())),
+        "offline_mode": runtime.offline,
         "last_cloud_refresh_ok": runtime.account.last_refresh_ok,
         "sensors": [_sensor(sensor) for sensor in runtime.sensors.values()],
     }

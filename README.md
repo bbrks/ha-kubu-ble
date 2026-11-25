@@ -82,7 +82,18 @@ After that:
 Entities only appear once Home Assistant has decoded the sensor's data.
 If nothing shows up, turn the key or open the door once, and check that your scanning mode isn't Passive.
 
-If a sensor's key stops working, Home Assistant fetches the keys again from your account. If the sign-in token has expired, it asks you to sign in again. The sensors keep working meanwhile.
+### Offline mode
+
+Don't want Home Assistant to visit the Kubu cloud after setup? Tick **Offline mode** when you sign in, or turn it on later under the account entry's *Configure*.
+With offline mode on, sensors are read over Bluetooth only, and Home Assistant never contacts Kubu on its own.
+New sensors and changes made in the Kubu app are only picked up when you start it: *Add sensor*, *Reconfigure*, or signing in again.
+The sign-in token stays saved, so turning offline mode off again doesn't need your password.
+
+### Signing in again
+
+Sign-in forms fill in the email you used last. The password is never saved.
+
+If a sensor's key stops working, Home Assistant fetches the keys again from your account (in offline mode, it asks you to sign in). If the sign-in token has expired, it asks you to sign in again. The sensors keep working meanwhile.
 
 ### Upgrading from 1.0
 

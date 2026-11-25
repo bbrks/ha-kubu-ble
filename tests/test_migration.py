@@ -244,3 +244,30 @@ async def test_repair_with_account_that_lacks_the_sensors(
     assert result["errors"] == {"base": "no_sensors_to_move"}
     assert _issue(hass) is not None
     assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+
+
+async def test_repair_remembers_email_and_offers_offline_mode(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock)
+    assert await async_setup_component(hass, "repairs", {})
+    legacy = await _legacy(hass)
+    # An email kept from an earlier sign-in (legacy reauth) is filled in.
+    hass.config_entries.async_update_entry(
+        legacy, data={**legacy.data, CONF_EMAIL: EMAIL}
+    )
+
+    from homeassistant.components.repairs import repairs_flow_manager
+
+    manager = repairs_flow_manager(hass)
+    result = await manager.async_init(DOMAIN, data={"issue_id": ISSUE_LEGACY_ENTRIES})
+    email_key = next(k for k in result["data_schema"].schema if k == CONF_EMAIL)
+    assert email_key.description == {"suggested_value": EMAIL}
+    with patch(PATCH_NEARBY, return_value=[]):
+        result = await manager.async_configure(
+            result["flow_id"], {**LOGIN, "offline_mode": True}
+        )
+        await hass.async_block_till_done()
+    (account,) = hass.config_entries.async_entries(DOMAIN)
+    assert account.options == {"offline_mode": True}
+    assert account.subentries
