@@ -1,6 +1,6 @@
 [project]
 name = "ha-kubu-ble"
-version = "1.0.2"
+version = "1.1.0"
 description = "Home Assistant integration for Kubu BLE lock sensors"
 requires-python = ">=3.13"
 
