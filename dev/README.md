@@ -13,6 +13,18 @@ still works. Run it in your own terminal (it asks for your password):
 .venv/bin/python dev/kubu_cloud_check.py you@example.com
 ```
 
+To test how long a refresh token lasts (the integration keeps one instead
+of your password), save one, then try it again days or weeks later. Each
+run prints when the password was last used:
+
+```sh
+.venv/bin/python dev/kubu_cloud_check.py you@example.com --save-token ~/.kubu-token
+.venv/bin/python dev/kubu_cloud_check.py --token ~/.kubu-token
+```
+
+Keep the token file private and outside the repo: it gives access to your
+Kubu account until it expires.
+
 ## `kubu_get_key_adb.py`
 
 Reads sensor keys from the Kubu Android app's log over `adb`.

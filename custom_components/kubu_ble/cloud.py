@@ -1,13 +1,19 @@
 """Minimal Kubu cloud client.
 
-Used only during setup, to fetch each sensor's dpKey from the user's Kubu
-account. After setup the integration works fully locally.
+Fetches each sensor's dpKey and details from the user's Kubu account. The
+sensors themselves are read locally; the cloud is only used to set them up
+and to keep their details up to date.
+
+Sign-in gives a refresh token. Like the Kubu app, keep that instead of the
+password: ID tokens last 5 minutes, so each visit starts with a refresh.
 
 No Home Assistant imports, so it can move to its own package later.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json as json_module
 import logging
 from dataclasses import dataclass
@@ -86,6 +92,23 @@ class KubuCloudNode:
     vib_setting: str | None = None  # "low" / "high" / "demo", as last set via the app
 
 
+def jwt_claims(token: str) -> dict[str, Any]:
+    """Read the claims of a JWT without checking its signature.
+
+    Only for reading our own token's user ID and times; never trust it for
+    anything else. Returns {} if the token is not a readable JWT.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return {}
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        claims = json_module.loads(base64.urlsafe_b64decode(payload))
+    except (binascii.Error, ValueError):
+        return {}
+    return claims if isinstance(claims, dict) else {}
+
+
 def normalize_mac(mac: str) -> str:
     """Turn any MAC format into AABBCCDDEEFF."""
     return mac.replace(":", "").replace("-", "").upper()
@@ -121,6 +144,18 @@ class KubuCloud:
         self._session = session
         self._token: str | None = None
         self._home_ids: list[str] = []
+        self.refresh_token: str | None = None
+
+    @property
+    def id_token_claims(self) -> dict[str, Any]:
+        """The current ID token's claims (user ID, times), or {}."""
+        return jwt_claims(self._token) if self._token else {}
+
+    @property
+    def user_id(self) -> str | None:
+        """The account's user ID (the "sub" of the ID token), once signed in."""
+        sub = self.id_token_claims.get("sub")
+        return sub if isinstance(sub, str) and sub else None
 
     async def _request(
         self, method: str, path: str, *, json: Any = None, params: Any = None
@@ -151,23 +186,45 @@ class KubuCloud:
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise KubuCloudError(f"{path}: {err}") from err
 
-    async def login(self, email: str, password: str) -> None:
-        """Log in with the email and password used in the Kubu app."""
-        data = await self._request(
-            "POST", "/oauth/login", json={"email": email.strip(), "password": password}
-        )
+    def _take_id_token(self, path: str, data: Any) -> dict[str, Any]:
         # The app sends the Cognito *ID* token as the Bearer token on API
         # calls, not the access token (the API returns 401 for that).
         token = data.get("idToken") if isinstance(data, dict) else None
         if not token:
             keys = sorted(data) if isinstance(data, dict) else type(data).__name__
-            raise KubuCloudError(f"/oauth/login: no idToken in response (keys: {keys})")
+            raise KubuCloudError(f"{path}: no idToken in response (keys: {keys})")
         self._token = token
+        return data
+
+    async def login(self, email: str, password: str) -> None:
+        """Log in with the email and password used in the Kubu app."""
+        data = self._take_id_token(
+            "/oauth/login",
+            await self._request(
+                "POST",
+                "/oauth/login",
+                json={"email": email.strip(), "password": password},
+            ),
+        )
+        refresh = data.get("refreshToken")
+        self.refresh_token = refresh if isinstance(refresh, str) and refresh else None
         self._home_ids = [
             h["id"]
             for h in data.get("homes") or []
             if isinstance(h, dict) and h.get("id")
         ]
+
+    async def refresh(self, refresh_token: str) -> None:
+        """Get a new ID token from a refresh token, as the app does.
+
+        The answer (HTTP 202) has no new refresh token: the same one is
+        used again until it expires. A rejected token raises KubuAuthError.
+        """
+        self._take_id_token(
+            "/oauth",
+            await self._request("POST", "/oauth", json={"refreshToken": refresh_token}),
+        )
+        self.refresh_token = refresh_token
 
     async def _get_home_ids(self) -> list[str]:
         if self._home_ids:

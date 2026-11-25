@@ -245,6 +245,36 @@ Errors are HTTP 401 or 403 with a JSON `code`:
 If `homes` is empty, `GET /users?type=all` (same bearer token) lists them
 as `records[].homeId`.
 
+#### Tokens and refresh
+
+Measured from the app (8.0.8) on 2026-11-25:
+
+- `idToken` and `accessToken` are RS256 JWTs valid for **5 minutes** (`expiresIn: 300`).
+  The `idToken`'s `sub` claim is the account's user ID.
+- `refreshToken` is a Cognito JWE (`RSA-OAEP` / `A256GCM`). It is encrypted, so its expiry can't be read.
+- The app never keeps the password. On every launch it refreshes instead:
+
+```http
+POST /oauth HTTP/1.1
+Host: api-green.kubusmart.com
+Content-Type: application/json; charset=UTF-8
+
+{"refreshToken":"eyJjdHki…"}
+```
+
+```http
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+
+{"idToken": "eyJraWQi…", "accessToken": "eyJraWQi…", "tokenType": "Bearer", "expiresIn": 300}
+```
+
+- The answer has **no new refresh token**: the same one is used again (no rotation).
+  It has no `homes` either, so use `GET /users?type=all` after a refresh.
+- The refresh token lasted at least 9 days (the ID token's `auth_time`, the last password
+  sign-in, was 9 days before the refresh). The upper limit is not known yet; Cognito's
+  default is 30 days. `dev/kubu_cloud_check.py --save-token` / `--token` can test it.
+
 ### 2. Get the sensor keys
 
 Send the **ID token** (`idToken`) as the bearer token.

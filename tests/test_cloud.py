@@ -13,14 +13,18 @@ from custom_components.kubu_ble.cloud import (
     KubuAuthError,
     KubuCloud,
     KubuCloudError,
+    jwt_claims,
     normalize_mac,
 )
 
 from .cloud_fixtures import (
     HOME_ID,
+    REFRESH_TOKEN,
     RETRO_PRO_NODE,
     TOKEN,
+    USER_ID,
     WINDOW_NODE,
+    make_jwt,
     mock_cloud,
 )
 from .conftest import TEST_KEY_HEX
@@ -172,3 +176,51 @@ async def test_node_with_odd_type_is_kept_as_unknown(
     await cloud.login("me@example.com", "secret")
     nodes = await cloud.get_ble_nodes()
     assert nodes["94A081123456"].sensor_type == 0
+
+
+async def test_login_keeps_refresh_token_and_user_id(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock)
+    cloud = KubuCloud(async_get_clientsession(hass))
+    assert cloud.user_id is None
+    await cloud.login("me@example.com", "secret")
+    assert cloud.refresh_token == REFRESH_TOKEN
+    assert cloud.user_id == USER_ID
+
+
+async def test_refresh_then_list_nodes(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    """A refresh token is enough: no password, like the Kubu app."""
+    mock_cloud(aioclient_mock)
+    cloud = KubuCloud(async_get_clientsession(hass))
+    await cloud.refresh(REFRESH_TOKEN)
+    assert set(await cloud.get_ble_nodes()) == {"94A081123456"}
+    assert cloud.user_id == USER_ID
+    assert cloud.refresh_token == REFRESH_TOKEN
+
+    refresh_call = aioclient_mock.mock_calls[0]
+    assert str(refresh_call[1]) == f"{API_BASE}/oauth"
+    assert refresh_call[2] == b'{"refreshToken":"test-refresh-token"}'
+    assert "Authorization" not in refresh_call[3]
+    # The refresh answer has no homes, so they come from /users.
+    assert aioclient_mock.mock_calls[-1][3]["Authorization"] == f"Bearer {TOKEN}"
+
+
+async def test_refresh_rejected(
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+) -> None:
+    mock_cloud(aioclient_mock, refresh_status=401)
+    cloud = KubuCloud(async_get_clientsession(hass))
+    with pytest.raises(KubuAuthError):
+        await cloud.refresh("old-token")
+
+
+def test_jwt_claims() -> None:
+    assert jwt_claims(make_jwt({"sub": "abc", "exp": 5})) == {"sub": "abc", "exp": 5}
+    assert jwt_claims("not-a-jwt") == {}
+    assert jwt_claims("a.%%%.c") == {}
+    assert jwt_claims(make_jwt({"sub": "x"}).replace(".sig", "")) == {}
+    # A JWE (5 parts, encrypted) can't be read.
+    assert jwt_claims("a.b.c.d.e") == {}
