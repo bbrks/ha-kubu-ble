@@ -98,6 +98,24 @@ async def test_repeated_bad_payloads_start_reauth(hass: HomeAssistant) -> None:
     assert flows[0]["context"]["entry_id"] == entry.entry_id
 
 
+async def test_setup_adverts_do_not_start_reauth(hass: HomeAssistant, caplog) -> None:
+    """A sensor in setup mode sends plain adverts; they are not a bad key."""
+    await _setup(hass)
+    for i in range(6):
+        setup_advert = bytes.fromhex(f"0F01042E{i:04X}0000000094A081123456")
+        inject(hass, make_service_info(payload=setup_advert))
+        await hass.async_block_till_done()
+    assert hass.config_entries.flow.async_progress_by_handler(DOMAIN) == []
+    assert "check the dpKey" not in caplog.text
+    assert caplog.text.count("is in setup mode") == 1
+    assert hass.states.get(LOCK) is None
+
+    # Normal frames still work afterwards.
+    inject(hass, make_service_info(LOCKED))
+    await hass.async_block_till_done()
+    assert hass.states.get(LOCK).state == STATE_OFF
+
+
 async def test_no_state_sensor(hass: HomeAssistant) -> None:
     """Lock + door cover the state; there is no separate state sensor."""
     await _setup(hass)

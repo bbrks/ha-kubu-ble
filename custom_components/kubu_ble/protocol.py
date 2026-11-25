@@ -23,6 +23,8 @@ BLOCK_SIZE = 16
 FRAME_EVENT = 0x10
 FRAME_HEARTBEAT = 0x20
 KNOWN_FRAME_TYPES = (FRAME_EVENT, FRAME_HEARTBEAT)
+# Byte 0 of the plain (not encrypted) advert a sensor sends in setup mode.
+SETUP_ADVERT = 0x0F
 
 # Byte 10, "SureShield" in the Kubu app.
 VIBRATION_ACTIVITY = 0x10  # "vibration activity"
@@ -88,6 +90,18 @@ def decrypt(payload: bytes, key: bytes) -> bytes:
         raise ValueError(f"payload must be {BLOCK_SIZE} bytes, got {len(payload)}")
     decryptor = Cipher(algorithms.AES(key), modes.ECB()).decryptor()
     return decryptor.update(payload) + decryptor.finalize()
+
+
+def is_setup_advert(payload: bytes) -> bool:
+    """Return True if the raw payload looks like a setup mode advert.
+
+    In setup (pairing) mode the sensor sends its manufacturer data in the
+    clear: byte 0 is 0x0F, byte 1 the class, bytes 2-3 the firmware and
+    bytes 10-15 its MAC address. The Kubu app checks byte 0 before it
+    decrypts anything. An encrypted payload starts with 0x0F 1 time in
+    256, so only treat it as setup mode if it also fails to decode.
+    """
+    return len(payload) == BLOCK_SIZE and payload[0] == SETUP_ADVERT
 
 
 def looks_valid(plain: bytes) -> bool:

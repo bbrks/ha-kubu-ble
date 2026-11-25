@@ -51,6 +51,23 @@ AES-ECB has no integrity check: a wrong key gives random bytes. A cheap
 sanity check is byte 0 (high nibble set, low nibble clear) and bytes 14-15
 (each below 100). Treat a key as wrong only if *every* frame fails.
 
+### Setup mode advert (not encrypted)
+
+In setup (pairing) mode the sensor sends its manufacturer data **in the clear**.
+The Kubu app (8.0.8, setup and firmware update screens) checks byte 0 of the
+raw data before it decrypts anything:
+
+| Byte | Meaning |
+|---|---|
+| 0 | `0F` = setup mode |
+| 1 | Class identifier (the Retro Pro setup screen wants `01`) |
+| 2-3 | Firmware, major and minor |
+| 10-15 | The sensor's MAC address |
+
+Never seen from a sensor that is already set up. If it is sent, it does not
+decrypt, so it must not count as a sign of a wrong key. The integration skips
+a raw payload that starts with `0F` and does not decode.
+
 ### Quirks
 
 1. Some event frames send a bad battery voltage (e.g. `0x0119` = 281 mV, `0x0110` = 272 mV). Suggest ignoring <1000 mV. The Kubu app does not, and briefly shows "Critical"

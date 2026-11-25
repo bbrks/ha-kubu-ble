@@ -37,16 +37,21 @@ def make_service_info(
     address: str = ADDRESS,
     rssi: int = -70,
     raw: bytes | None | str = "auto",
+    payload: bytes | None = None,
 ) -> BluetoothServiceInfoBleak:
     """Build a fake packet.
 
     Without plain_hex it is the name-only advert. With plain_hex it is the
     scan response carrying the encrypted state. raw defaults to matching
-    real packets; pass None to mimic a backend without raw data.
+    real packets; pass None to mimic a backend without raw data. payload
+    sends those manufacturer data bytes as they are, not encrypted.
     """
-    mfr = {3535: encrypt_hex(plain_hex, key_hex)} if plain_hex else {}
+    if payload is not None:
+        mfr = {3535: payload}
+    else:
+        mfr = {3535: encrypt_hex(plain_hex, key_hex)} if plain_hex else {}
     if raw == "auto":
-        if plain_hex:
+        if mfr:
             raw = bytes([19, 0xFF, 0xCF, 0x0D]) + mfr[3535]
         else:
             name_bytes = name.encode()

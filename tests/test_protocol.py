@@ -322,3 +322,17 @@ def test_models() -> None:
 
     for sensor_type, model in MODELS.items():
         assert model.verified == (sensor_type == 8)
+
+
+# A sensor in setup (pairing) mode sends this in the clear: byte 0 is 0x0F,
+# byte 1 the class, bytes 2-3 the firmware, bytes 10-15 its MAC address.
+SETUP_ADVERT = bytes.fromhex("0F01042E00000000000094A081123456")
+
+
+def test_setup_advert() -> None:
+    from custom_components.kubu_ble.protocol import is_setup_advert
+
+    assert is_setup_advert(SETUP_ADVERT)
+    assert not is_setup_advert(encrypt(bytes.fromhex(REAL_FRAMES[0][0])))
+    assert not is_setup_advert(SETUP_ADVERT[:15])
+    assert not is_setup_advert(b"")

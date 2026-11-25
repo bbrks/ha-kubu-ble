@@ -18,6 +18,7 @@ from .protocol import (
     KubuReading,
     battery_status,
     decode,
+    is_setup_advert,
     make_decoder,
     model_for,
 )
@@ -87,6 +88,7 @@ class KubuDeviceData:
         self._on_bad_key = on_bad_key
         self._bad_key_threshold = bad_key_threshold
         self._bad_count = 0
+        self._setup_mode_logged = False
         self._recent_payloads: deque[bytes] = deque(maxlen=RECENT_PAYLOADS)
         self._last_reading: KubuReading | None = None
         # (unix time, decrypted frame or None if it did not decode)
@@ -115,7 +117,16 @@ class KubuDeviceData:
                 payload, self._key, self._sensor_type, self._sensor_class, self._decoder
             )
             self.recent_frames.append((time.time(), reading))
-            if reading is None:
+            if reading is None and is_setup_advert(payload):
+                # Not encrypted, so not a sign of a wrong key.
+                if not self._setup_mode_logged:
+                    self._setup_mode_logged = True
+                    _LOGGER.info(
+                        "%s is in setup mode; it will not report its state "
+                        "until it leaves setup mode",
+                        service_info.address,
+                    )
+            elif reading is None:
                 self.bad_frames += 1
                 self._bad_count += 1
                 if self._bad_count == 1:
