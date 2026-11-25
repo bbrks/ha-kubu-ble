@@ -136,6 +136,27 @@ export function activityEntities(entities) {
     .map((role) => entities[role]);
 }
 
+const NOT_A_STATE = new Set(["unknown", "unavailable"]);
+
+/**
+ * The real changes of one entity in a minimal-response history list
+ * ([{s, lu, lc}]): no unknown/unavailable, and no repeats of the same
+ * state (HA writes the state again after a restart, for example).
+ * Returns [{state, time (ms)}], oldest first.
+ */
+export function realChanges(changes) {
+  const out = [];
+  let last = null;
+  for (const change of changes || []) {
+    const seconds = change.lc ?? change.lu;
+    if (NOT_A_STATE.has(change.s) || typeof seconds !== "number") continue;
+    if (change.s === last) continue;
+    last = change.s;
+    out.push({ state: change.s, time: seconds * 1000 });
+  }
+  return out;
+}
+
 /**
  * Turn a minimal-response history answer ({entity_id: [{s, lu, lc}]}) into
  * the newest few labelled changes: [{label, time (ms), entityId}].
@@ -144,16 +165,67 @@ export function activityItems(history, entities, limit = MAX_ACTIVITY) {
   const items = [];
   for (const [role, labels] of Object.entries(ACTIVITY_LABELS)) {
     const entityId = entities[role];
-    for (const change of (entityId && history?.[entityId]) || []) {
-      const label = labels[change.s];
-      const seconds = change.lc ?? change.lu;
-      if (label && typeof seconds === "number") {
-        items.push({ label, time: seconds * 1000, entityId });
-      }
+    for (const change of realChanges(entityId && history?.[entityId])) {
+      const label = labels[change.state];
+      if (label) items.push({ label, time: change.time, entityId });
     }
   }
   items.sort((a, b) => b.time - a.time);
   return items.slice(0, limit);
+}
+
+/**
+ * When the shown state started: the newest real change of the state
+ * entities in the history, or null if there is none. The entities'
+ * last_changed is not used for this: HA resets it on every restart.
+ */
+export function lastRealChange(history, entities) {
+  let newest = null;
+  for (const entityId of activityEntities(entities)) {
+    for (const change of realChanges(history?.[entityId])) {
+      if (newest === null || change.time > newest) newest = change.time;
+    }
+  }
+  return newest;
+}
+
+/**
+ * A clock time for the activity list: "13:42" today, "Yesterday 13:42",
+ * "Mon 13:42" this week, else "12 Nov 13:42".
+ * options: {locale, hour12, timeZone}, from the user's HA settings.
+ */
+export function formatWhen(time, now = Date.now(), options = {}) {
+  const locale = options.locale || "en";
+  const base = { timeZone: options.timeZone };
+  const clock = new Intl.DateTimeFormat(locale, {
+    ...base,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: options.hour12,
+  }).format(time);
+  const day = (t) =>
+    new Intl.DateTimeFormat("en-CA", { ...base, year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(t);
+  if (day(time) === day(now)) return clock;
+  if (day(time) === day(now - 86_400_000)) {
+    const yesterday = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-1, "day");
+    return `${yesterday.charAt(0).toUpperCase()}${yesterday.slice(1)} ${clock}`;
+  }
+  const date =
+    now - time < 6 * 86_400_000
+      ? new Intl.DateTimeFormat(locale, { ...base, weekday: "short" }).format(time)
+      : new Intl.DateTimeFormat(locale, { ...base, day: "numeric", month: "short" }).format(time);
+  return `${date} ${clock}`;
+}
+
+/** Date format options from the user's HA profile (hass.locale, hass.config). */
+export function timeOptions(hass) {
+  const locale = hass?.locale?.language || hass?.language || "en";
+  const format = hass?.locale?.time_format;
+  const hour12 = format === "12" ? true : format === "24" ? false : undefined;
+  const timeZone =
+    hass?.locale?.time_zone === "server" ? hass?.config?.time_zone || undefined : undefined;
+  return { locale, hour12, timeZone };
 }
 
 /** "just now", "5 minutes ago", "yesterday", ... */
@@ -357,10 +429,11 @@ class KubuBleCard extends Base {
       this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     }
 
-    const lastChanged = this._state(main)?.last_changed;
-    const since = lastChanged
-      ? `since ${relativeTime(Date.parse(lastChanged), Date.now(), locale)}`
-      : "";
+    // last_changed is reset by every HA restart; the history is not.
+    const changed =
+      lastRealChange(this._history, entities) ??
+      (this._state(main)?.last_changed ? Date.parse(this._state(main).last_changed) : null);
+    const since = changed ? `since ${relativeTime(changed, Date.now(), locale)}` : "";
     const status = overall.detail
       ? `${escape(overall.status)}<span class="detail">, ${escape(overall.detail)}</span>`
       : escape(overall.status);
@@ -464,11 +537,13 @@ class KubuBleCard extends Base {
       return `<div class="section">${title}
         <div class="since">Nothing in the last ${escape(hours)} hours</div></div>`;
     }
+    const options = timeOptions(this._hass);
     const rows = items
       .map(
         (item) => `<li class="clickable" data-entity="${escape(item.entityId)}">
           <span>${escape(item.label)}</span>
-          <span class="when">${escape(relativeTime(item.time, Date.now(), locale))}</span></li>`,
+          <span class="when" title="${escape(relativeTime(item.time, Date.now(), locale))}">
+            ${escape(formatWhen(item.time, Date.now(), options))}</span></li>`,
       )
       .join("");
     return `<div class="section">${title}<ul class="activity">${rows}</ul></div>`;

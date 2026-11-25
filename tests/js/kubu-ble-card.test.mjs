@@ -7,9 +7,13 @@ import {
   activityItems,
   findEntities,
   firstSensorDevice,
+  formatWhen,
+  lastRealChange,
   mainEntity,
   overallState,
+  realChanges,
   relativeTime,
+  timeOptions,
 } from "../../custom_components/kubu_ble/frontend/kubu-ble-card.js";
 
 const DEVICE = "dev1";
@@ -214,4 +218,73 @@ test("firstSensorDevice skips the Kubu cloud device", () => {
   };
   assert.equal(firstSensorDevice(hass), DEVICE);
   assert.equal(firstSensorDevice({ entities: {} }), null);
+});
+
+test("realChanges drops unknown/unavailable and repeats (like after a restart)", () => {
+  assert.deepEqual(
+    realChanges([
+      { s: "off", lu: 10 },
+      { s: "unavailable", lu: 20 },
+      { s: "off", lu: 30 }, // restart: same state again
+      { s: "on", lc: 40, lu: 41 },
+    ]),
+    [
+      { state: "off", time: 10_000 },
+      { state: "on", time: 40_000 },
+    ],
+  );
+  assert.deepEqual(realChanges(undefined), []);
+});
+
+test("activity after a restart does not repeat the state", () => {
+  const entities = findEntities(fakeHass({}), DEVICE);
+  const history = {
+    "binary_sensor.s_lock": [
+      { s: "on", lu: 100 },
+      { s: "unavailable", lu: 7000 },
+      { s: "on", lu: 7100 },
+    ],
+  };
+  assert.deepEqual(
+    activityItems(history, entities).map((i) => [i.label, i.time]),
+    [["Unlocked", 100_000]],
+  );
+});
+
+test("lastRealChange: when the shown state really started", () => {
+  const entities = findEntities(fakeHass({}), DEVICE);
+  const history = {
+    "binary_sensor.s_lock": [{ s: "on", lu: 100 }, { s: "on", lu: 7100 }],
+    "binary_sensor.s_door": [{ s: "on", lu: 200 }, { s: "off", lu: 300 }],
+    "binary_sensor.s_tamper": [{ s: "on", lu: 250 }, { s: "off", lu: 260 }],
+  };
+  assert.equal(lastRealChange(history, entities), 300_000);
+  assert.equal(lastRealChange(null, entities), null);
+  assert.equal(lastRealChange({}, entities), null);
+});
+
+test("formatWhen shows clock times, with the day when needed", () => {
+  const options = { locale: "en-GB", hour12: false, timeZone: "UTC" };
+  const now = Date.UTC(2026, 10, 25, 16, 0); // Wed 25 Nov 2026 16:00
+  assert.equal(formatWhen(Date.UTC(2026, 10, 25, 13, 42), now, options), "13:42");
+  assert.equal(formatWhen(Date.UTC(2026, 10, 24, 9, 5), now, options), "Yesterday 09:05");
+  assert.equal(formatWhen(Date.UTC(2026, 10, 22, 18, 30), now, options), "Sun 18:30");
+  assert.equal(formatWhen(Date.UTC(2026, 10, 12, 7, 0), now, options), "12 Nov 07:00");
+  // 12-hour clock when the user chose it.
+  const twelve = formatWhen(Date.UTC(2026, 10, 25, 13, 42), now, { ...options, hour12: true });
+  assert.match(twelve, /^0?1:42\s?pm$/i);
+});
+
+test("timeOptions follows the user's HA profile", () => {
+  assert.deepEqual(
+    timeOptions({
+      locale: { language: "de", time_format: "24", time_zone: "server" },
+      config: { time_zone: "Europe/Berlin" },
+    }),
+    { locale: "de", hour12: false, timeZone: "Europe/Berlin" },
+  );
+  assert.deepEqual(
+    timeOptions({ locale: { language: "en", time_format: "language", time_zone: "local" } }),
+    { locale: "en", hour12: undefined, timeZone: undefined },
+  );
 });
