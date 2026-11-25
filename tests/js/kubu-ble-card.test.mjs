@@ -185,7 +185,7 @@ test("activityItems gives each change an icon and a colour", () => {
       ["Tamper alert", "mdi:shield-alert", "alert"],
       ["Locked", "mdi:lock", "ok"],
       ["Closed", "mdi:door-closed", null],
-      ["Opened", "mdi:door-open", "warn"],
+      ["Opened", "mdi:door-open", "alert"],
       ["Unlocked", "mdi:lock-open-variant", "warn"],
     ],
   );
@@ -197,7 +197,7 @@ test("activityItems gives each change an icon and a colour", () => {
     [
       ["Closed", "mdi:window-closed-variant", null],
       ["Tilted", "mdi:window-open-variant", "warn"],
-      ["Opened", "mdi:window-open-variant", "warn"],
+      ["Opened", "mdi:window-open-variant", "alert"],
     ],
   );
 });

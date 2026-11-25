@@ -166,6 +166,7 @@ export function overallState(hass, entities) {
 }
 
 // What each state change shows in the activity list: [label, icon, tone].
+// Tones match overallState (like the Kubu app: unlocked is amber, open is red).
 // A null tone shows the icon in the normal muted colour.
 const ACTIVITY_LABELS = {
   lock: {
@@ -173,11 +174,11 @@ const ACTIVITY_LABELS = {
     off: ["Locked", "mdi:lock", "ok"],
   },
   door: {
-    on: ["Opened", "mdi:door-open", "warn"],
+    on: ["Opened", "mdi:door-open", "alert"],
     off: ["Closed", "mdi:door-closed", null],
   },
   window: {
-    on: ["Opened", "mdi:window-open-variant", "warn"],
+    on: ["Opened", "mdi:window-open-variant", "alert"],
     off: ["Closed", "mdi:window-closed-variant", null],
   },
   tilted: { on: ["Tilted", "mdi:window-open-variant", "warn"] },
