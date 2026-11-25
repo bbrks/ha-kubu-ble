@@ -28,8 +28,11 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 
 from .account import (
+    REASON_BAD_KEY,
     KubuAccount,
     async_abort_discovery_flows,
+    async_account_for,
+    async_forget_account,
     is_account_entry,
     is_offline,
     sensor_subentries,
@@ -60,7 +63,7 @@ from .device import KubuDeviceData
 from .protocol import parse_key
 from .scan_trigger import BurstScanTrigger
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -158,7 +161,7 @@ def _async_on_bad_key(hass: HomeAssistant, entry: KubuConfigEntry) -> None:
 
     async def _refresh_then_ask() -> None:
         _LOGGER.warning("A Kubu sensor key stopped working; fetching keys again")
-        await account.async_refresh()
+        await account.async_refresh(REASON_BAD_KEY)
         if account.last_refresh_ok and not account.last_changes:
             # Kubu still has the same key: let the user know.
             entry.async_start_reauth(hass)
@@ -187,7 +190,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> bool
         sensors[subentry.subentry_id] = _start_sensor(
             hass, entry, subentry.data, subentry
         )
-    account = KubuAccount(hass, entry)
+    account = async_account_for(hass, entry)
     entry.runtime_data = KubuRuntimeData(
         sensors,
         account,
@@ -233,6 +236,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> boo
 async def async_remove_entry(hass: HomeAssistant, entry: KubuConfigEntry) -> None:
     """Clean up repair issues when an entry is deleted."""
     if is_account_entry(entry):
+        async_forget_account(hass, entry)
         for subentry in sensor_subentries(entry):
             _delete_not_in_account_issue(hass, subentry.subentry_id)
     else:

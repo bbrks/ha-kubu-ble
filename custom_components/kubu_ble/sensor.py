@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import override
+from datetime import datetime
+from typing import Any, override
 
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataProcessor,
@@ -10,6 +11,7 @@ from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothProcessorEntity,
 )
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
@@ -26,6 +28,8 @@ from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceIn
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import KubuConfigEntry, KubuSensor
+from .account import CLOUD_STATUSES
+from .cloud_entities import KubuCloudEntity
 from .const import (
     CONF_SENSOR_CLASS,
     CONF_SENSOR_TYPE,
@@ -96,6 +100,16 @@ async def async_setup_entry(
             )
         )
         add([KubuSensitivitySensor(sensor), KubuBatteryTypeSensor(sensor)])
+    if (account := entry.runtime_data.account) is not None:
+        async_add_entities(
+            [
+                KubuCloudStatusSensor(account, "cloud_status"),
+                KubuLastCheckSensor(account, "last_check"),
+                KubuLastSuccessSensor(account, "last_successful_check"),
+                KubuNextCheckSensor(account, "next_check"),
+                KubuAccountSensorsSensor(account, "sensors_in_account"),
+            ]
+        )
 
 
 class KubuSensorEntity(
@@ -121,7 +135,7 @@ class KubuSensitivitySensor(SensorEntity):
     """Vibration sensitivity as saved in the Kubu account.
 
     The sensor does not broadcast its sensitivity, so this is the value from
-    the Kubu account, refreshed every few hours.
+    the Kubu account, refreshed daily (or with Check now).
     """
 
     _attr_has_entity_name = True
@@ -176,3 +190,110 @@ class KubuBatteryTypeSensor(SensorEntity):
             self._attr_native_value = BATTERY_RETRO_PRO
         else:
             self._attr_native_value = BATTERY_OTHER
+
+
+# --- The "Kubu cloud" device ---------------------------------------------------
+
+
+class KubuCloudStatusSensor(KubuCloudEntity, SensorEntity):
+    """How the last cloud check went, or offline mode."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = CLOUD_STATUSES
+
+    @property
+    @override
+    def native_value(self) -> str:
+        """Return the status."""
+        return self.account.status
+
+
+class _KubuCloudRestoreSensor(KubuCloudEntity, RestoreSensor):
+    """A cloud sensor that keeps its last value over reloads and restarts.
+
+    Every change to the sensors reloads the entry (a new KubuAccount), and
+    offline mode never checks on its own, so without this it would go blank.
+    The restored value is shown until the account has a value of its own.
+    """
+
+    _restored_value: Any = None
+    _restored_attributes: dict[str, Any] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last value."""
+        await super().async_added_to_hass()
+        if (data := await self.async_get_last_sensor_data()) is not None:
+            self._restored_value = data.native_value
+        if (state := await self.async_get_last_state()) is not None:
+            self._restored_attributes = dict(state.attributes)
+
+    def _value(self) -> Any:
+        raise NotImplementedError
+
+    @property
+    @override
+    def native_value(self) -> Any:
+        """Return the account's value, else the restored one."""
+        value = self._value()
+        return self._restored_value if value is None else value
+
+
+class KubuLastCheckSensor(_KubuCloudRestoreSensor):
+    """When the cloud was last checked, good or bad, and why."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def _value(self) -> datetime | None:
+        return self.account.last_attempt
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Why the last check ran."""
+        if self.account.last_reason is not None:
+            return {"reason": self.account.last_reason}
+        if self._restored_attributes and "reason" in self._restored_attributes:
+            return {"reason": self._restored_attributes["reason"]}
+        return None
+
+
+class KubuLastSuccessSensor(_KubuCloudRestoreSensor):
+    """When the cloud was last reached."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def _value(self) -> datetime | None:
+        return self.account.last_success
+
+
+class KubuNextCheckSensor(KubuCloudEntity, SensorEntity):
+    """When the next automatic check runs (unknown in offline mode)."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    @property
+    @override
+    def native_value(self) -> datetime | None:
+        """Return the time."""
+        return self.account.next_check
+
+
+class KubuAccountSensorsSensor(_KubuCloudRestoreSensor):
+    """How many sensors the Kubu account has, and which are set up here.
+
+    Lists each sensor's name in the Kubu app only: no addresses or keys.
+    """
+
+    def _value(self) -> int | None:
+        sensors = self.account.account_sensors
+        return None if sensors is None else len(sensors)
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """The account's sensors: name, set up here, heard nearby."""
+        if self.account.account_sensors is not None:
+            return {"sensors": self.account.account_sensors}
+        if self._restored_attributes and "sensors" in self._restored_attributes:
+            return {"sensors": self._restored_attributes["sensors"]}
+        return None

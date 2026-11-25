@@ -24,10 +24,18 @@ CONF_OFFLINE = "offline_mode"
 # Each sensor is a subentry of its account entry.
 SUBENTRY_SENSOR = "sensor"
 
-# How often to refresh sensor details (names, keys, settings) and look for
-# new sensors in the Kubu account. The sensors are read locally, so this is
-# only for changes made in the Kubu app.
-CLOUD_REFRESH_INTERVAL_HOURS = 6
+# How often to check the Kubu account for changes made in the Kubu app
+# (names, settings). New sensors don't wait for this: hearing a Kubu sensor
+# that is not set up starts a check (see account.py).
+CLOUD_REFRESH_INTERVAL_HOURS = 24
+# After hearing a new Kubu sensor, wait this long before checking the cloud
+# (so its scan response can arrive, and several new sensors share a check),
+# and check because of new sensors at most once per cooldown.
+CLOUD_TRIGGER_DELAY_SECONDS = 30
+CLOUD_TRIGGER_COOLDOWN_SECONDS = 600
+# A heard sensor that is not in the account (a neighbour's, say) does not
+# start another check for this long.
+NOT_IN_ACCOUNT_SKIP_HOURS = 24
 # Sensor lists fetched from the cloud are reused for this long, so adding
 # several sensors in a row (or discovery right after a refresh) is one visit.
 CLOUD_CACHE_SECONDS = 600

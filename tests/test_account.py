@@ -210,7 +210,7 @@ async def test_cloud_down_does_not_stop_setup(
     assert hass.states.get(LOCK).state == STATE_OFF
 
 
-async def test_refreshes_every_few_hours(
+async def test_refreshes_daily(
     hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
 ) -> None:
     mock_cloud(aioclient_mock)
@@ -219,6 +219,9 @@ async def test_refreshes_every_few_hours(
     calls = aioclient_mock.call_count
     with patch(PATCH_NEARBY, return_value=[]):
         async_fire_time_changed(hass, dt_util.utcnow() + timedelta(hours=6, minutes=1))
+        await hass.async_block_till_done()
+        assert aioclient_mock.call_count == calls  # no longer every 6 hours
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(hours=24, minutes=1))
         await hass.async_block_till_done()
     assert aioclient_mock.call_count > calls
     # Only the refresh token is used, never a password sign-in.

@@ -4,7 +4,7 @@
     "step": {
       "login": {
         "title": "Sign in to Kubu",
-        "description": "Sign in with the email and password you use in the Kubu app.\n\nHome Assistant adds every Kubu sensor in your account that it can hear, and adds the others as soon as they are in range. Sensors are read locally over Bluetooth.\n\nYour password is not saved. Home Assistant keeps a sign-in token, like the Kubu app does, to check your account for new sensors and changes now and then. Turn on offline mode to stop that.\n\nSensors must already be set up in the Kubu app.",
+        "description": "Sign in with the email and password you use in the Kubu app.\n\nHome Assistant adds every Kubu sensor in your account that it can hear, and adds the others as soon as they are in range. Sensors are read locally over Bluetooth.\n\nYour password is not saved. The Kubu cloud is only needed now, to get each sensor's key. After that, Home Assistant keeps a sign-in token, like the Kubu app does, to check your account daily and when it hears a new Kubu sensor. This is optional: turn on offline mode to stop it.\n\nSensors must already be set up in the Kubu app.",
         "data": {
           "email": "Email",
           "password": "Password",
@@ -66,6 +66,50 @@
       },
       "battery_type": {
         "name": "Battery type"
+      },
+      "cloud_status": {
+        "name": "Status",
+        "state": {
+          "ok": "OK",
+          "cannot_connect": "Can't reach Kubu",
+          "sign_in_expired": "Sign-in expired",
+          "offline_mode": "Offline mode",
+          "not_checked": "Not checked yet"
+        }
+      },
+      "last_check": {
+        "name": "Last check",
+        "state_attributes": {
+          "reason": {
+            "name": "Reason",
+            "state": {
+              "startup": "Startup",
+              "scheduled": "Daily check",
+              "new_sensor_heard": "New sensor heard",
+              "check_now": "Check now",
+              "bad_key": "A sensor key stopped working"
+            }
+          }
+        }
+      },
+      "last_successful_check": {
+        "name": "Last successful check"
+      },
+      "next_check": {
+        "name": "Next check"
+      },
+      "sensors_in_account": {
+        "name": "Sensors in account",
+        "state_attributes": {
+          "sensors": {
+            "name": "Sensors"
+          }
+        }
+      }
+    },
+    "button": {
+      "check_now": {
+        "name": "Check now"
       }
     }
   },

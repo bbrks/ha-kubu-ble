@@ -32,6 +32,32 @@
         "state": {
           "off": "mdi:vibrate-off"
         }
+      },
+      "cloud_status": {
+        "default": "mdi:cloud-check-outline",
+        "state": {
+          "cannot_connect": "mdi:cloud-alert-outline",
+          "sign_in_expired": "mdi:cloud-lock-outline",
+          "offline_mode": "mdi:cloud-off-outline",
+          "not_checked": "mdi:cloud-question-outline"
+        }
+      },
+      "last_check": {
+        "default": "mdi:cloud-clock-outline"
+      },
+      "last_successful_check": {
+        "default": "mdi:cloud-check-outline"
+      },
+      "next_check": {
+        "default": "mdi:cloud-arrow-down-outline"
+      },
+      "sensors_in_account": {
+        "default": "mdi:format-list-bulleted"
+      }
+    },
+    "button": {
+      "check_now": {
+        "default": "mdi:cloud-refresh-outline"
       }
     }
   }

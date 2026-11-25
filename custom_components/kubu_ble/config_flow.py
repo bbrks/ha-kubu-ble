@@ -226,14 +226,15 @@ class KubuConfigFlow(ConfigFlow, domain=DOMAIN):
         for entry in self.hass.config_entries.async_entries(DOMAIN):
             if (account := get_account(self.hass, entry)) is None or is_offline(entry):
                 continue  # offline mode: only the user starts cloud visits
-            try:
-                nodes = await account.async_get_nodes()
-            except KubuAuthError:
-                entry.async_start_reauth(self.hass)
-                continue
-            except KubuCloudError as err:
-                _LOGGER.debug("Kubu cloud error: %s", err)
-                continue
+            nodes = await account.async_check_for(mac)
+            if nodes is None:
+                continue  # cloud down (or sign-in expired: reauth started)
+            if mac in configured_sensors(self.hass):
+                # The check just added it.
+                return self.async_abort(
+                    reason="sensor_added",
+                    description_placeholders={"name": nodes[mac].name},
+                )
             if (node := nodes.get(mac)) is None:
                 continue
             if node_model(node) is None:

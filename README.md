@@ -12,9 +12,11 @@ It uses Home Assistant's own Bluetooth adapter (or an ESPHome Bluetooth proxy). 
 <img width="1235" height="889" alt="Home Assistant screenshot of a Kubu BLE device" src="https://github.com/user-attachments/assets/d97d9081-0ac8-4651-ac54-00e9ebe755c7" />
 
 Kubu sensors encrypt state with a key stored in Kubu's cloud.
-You sign in to your Kubu account once. The integration gets each sensor's key, then reads the sensors locally over Bluetooth.
-Your password is not saved. Like the Kubu app, the integration keeps a sign-in token, so it can check your account every few hours for new sensors and changes (names, settings).
+The Kubu cloud is only **needed once**: you sign in at setup, the integration gets each sensor's key, and from then on reads the sensors locally over Bluetooth.
 The sensors keep working if the Kubu cloud or your internet is down.
+
+Everything else the cloud does here is **optional**. By default the integration keeps a sign-in token (never your password), like the Kubu app does, so it can pick up new sensors and changes made in the Kubu app.
+Don't want that? Turn on [offline mode](#offline-mode).
 
 This project was achieved by reverse engineering the Kubu Android app - but is not made by nor supported by Kubu.
 
@@ -74,8 +76,8 @@ Home Assistant should find your sensors by itself and list them under `Settings 
 
 After that:
 
-- **New sensors** you set up in the Kubu app are added on their own once Home Assistant hears them.
-- **Changes in the Kubu app** (sensor name, vibration sensitivity) show up within a few hours.
+- **New sensors** you set up in the Kubu app are added on their own, a few minutes after Home Assistant first hears them.
+- **Changes in the Kubu app** (sensor name, vibration sensitivity) show up within a day, or straight away with *Check now* (see below).
 - **Removed a sensor here?** It is not added back. To add it again, open the account entry and choose *Add sensor*.
 - **Sensor removed from your Kubu account?** You get a repair notice. It keeps working with its saved key until you remove it.
 
@@ -88,6 +90,18 @@ Don't want Home Assistant to visit the Kubu cloud after setup? Tick **Offline mo
 With offline mode on, sensors are read over Bluetooth only, and Home Assistant never contacts Kubu on its own.
 New sensors and changes made in the Kubu app are only picked up when you start it: *Add sensor*, *Reconfigure*, or signing in again.
 The sign-in token stays saved, so turning offline mode off again doesn't need your password.
+
+### Cloud status
+
+The account entry has a **Kubu cloud** device, which shows how the cloud side is doing:
+
+- **Status**: OK, can't reach Kubu, sign-in expired, or offline mode.
+- **Last check**, **Last successful check** and **Next check**. *Last check* also says why it ran (startup, daily check, new sensor heard, Check now).
+- **Sensors in account**: how many sensors your Kubu account has. Its `sensors` attribute lists each one's name, whether it is set up here, and whether Home Assistant can hear it.
+- **Check now**: checks your Kubu account straight away. This also works in offline mode, because you asked for it.
+
+The integration checks your account once a day, and soon after it hears a Kubu sensor that isn't set up yet (at most once every 10 minutes).
+A sensor that isn't in your account, a neighbour's say, doesn't start another check for a day.
 
 ### Signing in again
 

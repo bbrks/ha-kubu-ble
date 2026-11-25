@@ -7,6 +7,7 @@ Download it for the whole entry, or for one sensor from its device page.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
@@ -27,6 +28,10 @@ TO_REDACT = {
     CONF_IGNORED,
     "title",
 }
+
+
+def _time(value: datetime | None) -> str | None:
+    return None if value is None else value.isoformat()
 
 
 def _reading(reading: KubuReading | None) -> dict[str, Any] | None:
@@ -77,6 +82,19 @@ async def async_get_config_entry_diagnostics(
         "ignored_sensors": len(entry.data.get(CONF_IGNORED, ())),
         "offline_mode": runtime.offline,
         "last_cloud_refresh_ok": runtime.account.last_refresh_ok,
+        "cloud": {
+            "status": runtime.account.status,
+            "last_check": _time(runtime.account.last_attempt),
+            "last_successful_check": _time(runtime.account.last_success),
+            "next_check": _time(runtime.account.next_check),
+            "last_reason": runtime.account.last_reason,
+            # Only the count: sensor names stay out of a file people share.
+            "sensors_in_account": (
+                None
+                if runtime.account.account_sensors is None
+                else len(runtime.account.account_sensors)
+            ),
+        },
         "sensors": [_sensor(sensor) for sensor in runtime.sensors.values()],
     }
 
