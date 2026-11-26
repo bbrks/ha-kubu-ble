@@ -723,7 +723,7 @@ const LABELS = {
   activity_hours: "Hours of history to look back",
 };
 
-class KubuBleCardEditor extends Base {
+export class KubuBleCardEditor extends Base {
   setConfig(config) {
     this._config = config;
     this._render();
@@ -740,7 +740,10 @@ class KubuBleCardEditor extends Base {
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (schema) => LABELS[schema.name] || schema.name;
       this._form.addEventListener("value-changed", (ev) => {
-        this._config = configChange(this._config, this._form.data, ev.detail.value);
+        // ha-form has already changed its own data by now, so compare with
+        // what it showed: the old config with its defaults.
+        const shown = resolveConfig(this._config);
+        this._config = configChange(this._config, shown, ev.detail.value);
         this._form.data = resolveConfig(this._config);
         this.dispatchEvent(
           new CustomEvent("config-changed", {

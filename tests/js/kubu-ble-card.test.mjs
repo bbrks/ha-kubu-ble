@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  KubuBleCardEditor,
   activityEntities,
   activityItems,
   configChange,
@@ -377,4 +378,48 @@ test("configChange: switching to compact picks up the compact defaults", () => {
     configChange(withActivity, shownCompact, { ...shownCompact, compact: false }),
     old,
   );
+});
+
+/**
+ * A stand-in for HA's <ha-form>: like the real one, it updates its own
+ * `data` first, then fires value-changed with the new data.
+ */
+function fakeForm() {
+  const listeners = {};
+  return {
+    addEventListener: (type, fn) => (listeners[type] = fn),
+    userChanges(changes) {
+      this.data = { ...this.data, ...changes };
+      listeners["value-changed"]({ detail: { value: this.data } });
+    },
+  };
+}
+
+function editorWithForm(config) {
+  const form = fakeForm();
+  const sent = [];
+  globalThis.document = { createElement: () => form };
+  const editor = new KubuBleCardEditor();
+  editor.appendChild = () => {};
+  editor.dispatchEvent = (ev) => sent.push(ev.detail.config);
+  editor.setConfig(config);
+  editor.hass = {};
+  delete globalThis.document;
+  return { form, sent };
+}
+
+test("editor: turning a part off is sent to HA", () => {
+  const config = { type: "custom:kubu-ble-card", device_id: DEVICE };
+  const { form, sent } = editorWithForm(config);
+  form.userChanges({ show_firmware: false });
+  assert.deepEqual(sent.at(-1), { ...config, show_firmware: false });
+  assert.equal(form.data.show_firmware, false);
+});
+
+test("editor: compact is sent to HA", () => {
+  const config = { type: "custom:kubu-ble-card", device_id: DEVICE };
+  const { form, sent } = editorWithForm(config);
+  form.userChanges({ compact: true });
+  assert.deepEqual(sent.at(-1), { ...config, compact: true });
+  assert.equal(form.data.show_activity, false);
 });
